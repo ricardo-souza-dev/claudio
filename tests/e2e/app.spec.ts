@@ -116,11 +116,53 @@ test.afterEach(async ({}, testInfo) => {
   await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
 })
 
+test('welcome: Claudio illustration sits above the title in both themes and compact windows', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  const illustration = page.getByRole('img', { name: 'Claudio, um programador de óculos e fones, sorrindo atrás de um notebook' })
+  const heading = page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })
+
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value }, theme)
+    for (const size of [{ width: 1240, height: 820 }, { width: 760, height: 600 }]) {
+      await page.setViewportSize(size)
+      await expect(illustration).toBeVisible()
+      const imageBounds = await illustration.boundingBox()
+      const titleBounds = await heading.boundingBox()
+      const composerBounds = await page.getByLabel('Mensagem', { exact: true }).boundingBox()
+      expect(imageBounds).not.toBeNull()
+      expect(titleBounds).not.toBeNull()
+      expect(composerBounds).not.toBeNull()
+      expect(imageBounds!.y).toBeGreaterThanOrEqual(40)
+      expect(imageBounds!.y + imageBounds!.height).toBeLessThanOrEqual(titleBounds!.y)
+      expect(titleBounds!.y + titleBounds!.height).toBeLessThan(composerBounds!.y)
+      await shot(page, `welcome-claudio-${theme}-${size.width}`)
+    }
+  }
+
+  await pickModel(page, 'Claude Simulado')
+  await send(page, 'Olá')
+  await expect(illustration).toHaveCount(0)
+  await idle(page)
+  expect(problems).toEqual([])
+  await app.close()
+})
+
 test('first run: locked-down renderer, empty state, connecting a provider through the UI', async () => {
   const { app, page, problems } = await launch()
 
   // Nothing happens outside a project: there is no message box yet, and the main process refuses too.
-  await expect(page.getByRole('heading', { name: 'Em qual projeto vamos trabalhar?' })).toBeVisible()
+  const projectHeading = page.getByRole('heading', { name: 'Em qual projeto vamos trabalhar?' })
+  await expect(projectHeading).toBeVisible()
+  const mascot = page.getByRole('img', { name: 'Claudio, um programador de óculos e fones, sorrindo atrás de um notebook' })
+  await expect(mascot).toBeVisible()
+  const mascotBounds = await mascot.boundingBox()
+  const headingBounds = await projectHeading.boundingBox()
+  expect(mascotBounds).not.toBeNull()
+  expect(headingBounds).not.toBeNull()
+  expect(mascotBounds!.y + mascotBounds!.height).toBeLessThanOrEqual(headingBounds!.y)
+  expect(mascotBounds!.width).toBeLessThan(216)
   await expect(page.getByLabel('Mensagem', { exact: true })).toHaveCount(0)
   await shot(page, '00-escolher-projeto')
   const refused = await page.evaluate(async () => {
@@ -564,11 +606,13 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   // Staging another change takes priority over a pending push.
   await writeFile(path.join(workspace, 'outro.txt'), 'outro\n')
   await panel.getByRole('button', { name: 'Atualizar painel' }).click()
+  await panel.locator('.git-file', { hasText: 'outro.txt' }).hover()
   await expect(panel.getByRole('button', { name: 'Preparar outro.txt', exact: true })).toBeVisible()
   await expect(primaryAction).toHaveAccessibleName('Push')
   await panel.getByRole('button', { name: 'Preparar outro.txt', exact: true }).click()
   await expect(primaryAction).toHaveAccessibleName('Fazer commit')
   await expect(primaryAction).toBeDisabled()
+  await panel.locator('.git-file', { hasText: 'outro.txt' }).hover()
   await panel.getByRole('button', { name: 'Tirar outro.txt do commit', exact: true }).click()
   await expect(primaryAction).toHaveAccessibleName('Push')
   await rm(path.join(workspace, 'outro.txt'))

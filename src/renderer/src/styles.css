@@ -2218,6 +2218,15 @@ button.chip:hover {
   margin-left: -0.75px;
   background: var(--thread);
 }
+.claudio-illustration {
+  display: block;
+  flex: 0 1 auto;
+  min-height: 64px;
+  width: 240px;
+  max-width: 100%;
+  height: clamp(100px, 22vh, 180px);
+  margin: 0 0 18px;
+}
 .welcome h1 {
   margin: 0 0 6px;
   font-size: 25px;
@@ -2235,6 +2244,12 @@ button.chip:hover {
 
 .welcome.chooser {
   justify-content: center;
+  overflow-y: auto;
+}
+.chooser .claudio-illustration {
+  width: 168px;
+  height: clamp(100px, 20vh, 174px);
+  margin-bottom: 18px;
 }
 .chooser .result.failed {
   margin: 10px 0 0;

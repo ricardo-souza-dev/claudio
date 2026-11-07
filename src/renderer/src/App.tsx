@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chooseAutoModel, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, NEW_THREAD_TITLE, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
 import { summarizeUsage } from '../../shared/usage'
+import { ClaudioIllustration } from './ClaudioIllustration'
 import { Composer, type ComposerHandle } from './Composer'
 import { ContextMeter } from './ContextMeter'
 import { folderName, modelLabel, remoteErrorMessage } from './format'
@@ -56,6 +57,7 @@ function groupByProject(summaries: ThreadSummary[]): ProjectGroup[] {
 function ProjectChooser({ recent, error, onChoose }: { recent: string[]; error: string | null; onChoose(folder?: string): void }) {
   return (
     <div className="welcome chooser">
+      <ClaudioIllustration />
       <h1>Em qual projeto vamos trabalhar?</h1>
       <p>Toda conversa parte de uma pasta no seu computador. Assim, qualquer modelo trabalha com o contexto geral do projeto.</p>
       <button className="button primary" onClick={() => onChoose()}>
@@ -367,6 +369,7 @@ export function App() {
           <ProjectChooser recent={recentProjects} error={projectError} onChoose={(folder) => void chooseProject(folder)} />
         ) : empty ? (
           <div className="welcome">
+            <ClaudioIllustration />
             <h1>Claudio, o queridinho dos devs.</h1>
             <p>Uma conversa, qualquer modelo. Comece com um e troque quando quiser: a conversa, a memória e as ferramentas continuam as mesmas.</p>
             {projectError && (
