@@ -362,6 +362,7 @@ function GitTab({
 
   const staged = status.files.filter((file) => !file.untracked && !file.conflicted && file.index !== '.')
   const changed = status.files.filter((file) => file.untracked || file.conflicted || file.worktree !== '.')
+  const pushPending = staged.length === 0 && canSync(status) && (status.ahead > 0 || (!status.upstream && status.commits.length > 0))
   const local = status.branches.filter((branch) => !branch.remote)
   const remote = status.branches.filter((branch) => branch.remote)
 
@@ -488,10 +489,15 @@ function GitTab({
             </button>
           </div>
         </div>
-        <button className="button primary commit-button" aria-label="Fazer commit" disabled={busy !== null || staged.length === 0 || !message.trim()} onClick={() => void act({ type: 'commit', message }, () => setMessage(''))}>
-          {busy === 'commit' ? <Loader2 size={14} className="spin" aria-hidden /> : <Check size={14} aria-hidden />}
-          <span>{busy === 'commit' ? 'Criando commit…' : 'Fazer commit'}</span>
-          <kbd aria-hidden>Ctrl ↵</kbd>
+        <button
+          className="button primary commit-button"
+          aria-label={pushPending ? 'Push' : 'Fazer commit'}
+          disabled={busy !== null || (!pushPending && (staged.length === 0 || !message.trim()))}
+          onClick={() => pushPending ? void act({ type: 'push' }) : void act({ type: 'commit', message }, () => setMessage(''))}
+        >
+          {busy === 'commit' || busy === 'push' ? <Loader2 size={14} className="spin" aria-hidden /> : pushPending ? <ArrowUp size={14} aria-hidden /> : <Check size={14} aria-hidden />}
+          <span>{busy === 'commit' ? 'Criando commit…' : busy === 'push' ? 'Enviando…' : pushPending ? 'Push' : 'Fazer commit'}</span>
+          {!pushPending && <kbd aria-hidden>Ctrl ↵</kbd>}
         </button>
       </Section>
 

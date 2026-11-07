@@ -477,7 +477,8 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(panel.getByText('Primeiro commit', { exact: true })).toBeVisible()
   await expect(panel.locator('.section-count')).toHaveCount(0)
   await expect(panel.getByRole('button', { name: 'Gerar mensagem do commit com IA' })).toBeDisabled()
-  await expect(panel.getByRole('button', { name: 'Fazer commit' })).toBeDisabled()
+  await expect(panel.locator('.commit-button')).toHaveAccessibleName('Push')
+  await expect(panel.locator('.commit-button')).toBeEnabled()
   await expect(panel.locator('.commit-hash').first()).toHaveText(repo('rev-parse', '--short=7', 'HEAD'))
   // The refined surfaces stay readable and contained in either system theme.
   for (const colorScheme of ['light', 'dark'] as const) {
@@ -489,6 +490,9 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   }
   // With a remote but no upstream yet, the branch can be published in one click.
   await expect(panel.getByRole('button', { name: 'Publicar principal no remoto' })).toBeVisible()
+  await panel.locator('.commit-button').click()
+  await expect(panel.getByRole('button', { name: 'Fazer commit' })).toBeDisabled()
+  expect(repo('rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/principal')
 
   // Pull requests come from the GitHub CLI.
   await expect(panel.getByText('Corrige o login')).toBeVisible()
@@ -544,6 +548,30 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   expect(repo('log', '-1', '--format=%s')).toBe('feat(painel): adiciona a segunda linha')
   expect(repo('log', '-1', '--format=%b')).toContain('Mostra o que mudou no README.')
 
+  // The primary action becomes push, but never sends the commit automatically.
+  const primaryAction = panel.locator('.commit-button')
+  await expect(primaryAction).toHaveAccessibleName('Push')
+  await expect(primaryAction).toBeEnabled()
+  await expect(primaryAction.locator('kbd')).toHaveCount(0)
+  expect(repo('rev-list', '--count', '@{upstream}..HEAD')).toBe('1')
+
+  // Staging another change takes priority over a pending push.
+  await writeFile(path.join(workspace, 'outro.txt'), 'outro\n')
+  await panel.getByRole('button', { name: 'Atualizar painel' }).click()
+  await expect(panel.getByRole('button', { name: 'Preparar outro.txt', exact: true })).toBeVisible()
+  await expect(primaryAction).toHaveAccessibleName('Push')
+  await panel.getByRole('button', { name: 'Preparar outro.txt', exact: true }).click()
+  await expect(primaryAction).toHaveAccessibleName('Fazer commit')
+  await expect(primaryAction).toBeDisabled()
+  await panel.getByRole('button', { name: 'Tirar outro.txt do commit', exact: true }).click()
+  await expect(primaryAction).toHaveAccessibleName('Push')
+  await rm(path.join(workspace, 'outro.txt'))
+
+  await primaryAction.click()
+  await expect(primaryAction).toHaveAccessibleName('Fazer commit')
+  await expect(primaryAction).toBeDisabled()
+  expect(repo('rev-parse', '@{upstream}')).toBe(repo('rev-parse', 'HEAD'))
+
   // New branch, then publish it.
   await panel.getByRole('button', { name: 'Nova branch' }).click()
   await panel.getByLabel('Nome da nova branch').fill('nome inválido')
@@ -554,7 +582,8 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(panel.getByLabel('Branch', { exact: true })).toHaveValue('recurso/painel')
   expect(repo('branch', '--show-current')).toBe('recurso/painel')
   await expect(panel.getByText('Só local')).toBeVisible()
-  await panel.getByRole('button', { name: 'Push', exact: true }).click()
+  await expect(primaryAction).toHaveAccessibleName('Push')
+  await primaryAction.click()
   await expect(panel.getByText('Só local')).toHaveCount(0)
   expect(repo('rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/recurso/painel')
 
@@ -744,6 +773,15 @@ test('while working: context, tokens, strength of the model, task list and queue
   await expect(page.locator('.plan .spin')).toHaveCount(0)
   await expect(page.locator('.plan-status')).toContainText('Nenhuma execução em andamento.')
   await shot(page, '21-tarefas')
+  await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toBeEnabled()
+  const pausedTitle = await page.locator('.topbar-title').innerText()
+  await page.keyboard.press('Control+n')
+  await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toHaveCount(0)
+  await page.locator('.thread-open').filter({ hasText: pausedTitle }).click()
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  await expect(page.locator('.user-text').last()).toHaveText('Continue de onde parou.')
+  await idle(page)
+  await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toHaveCount(0)
 
   // Cancelling preserves unfinished tasks, but no longer makes them look active.
   await send(page, 'plano-interrompivel ferramenta: update_plan {"items":[{"content":"Revisar distribuição","status":"in_progress"},{"content":"Preparar macOS","status":"pending"}]}')
@@ -764,6 +802,12 @@ test('while working: context, tokens, strength of the model, task list and queue
   await page.reload()
   await expect(page.locator('.plan-status')).toContainText('Execução interrompida.')
   await expect(page.locator('.plan .spin')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click()
+  await expect(page.locator('.user-text').last()).toHaveText('Continue de onde parou.')
+  await idle(page)
+  expect(llm.last('anthropic')!.body.messages.at(-1).content).toEqual([{ type: 'text', text: 'Continue de onde parou.' }])
+  await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toHaveCount(0)
 
   // Time and tokens count up while the model works.
   await pickModel(page, 'chat-mock')

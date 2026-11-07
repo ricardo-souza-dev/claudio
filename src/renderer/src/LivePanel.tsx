@@ -1,4 +1,4 @@
-import { Check, CornerDownLeft, Loader2, Pause, X } from 'lucide-react'
+import { Check, CornerDownLeft, Loader2, Pause, Play, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ApprovalRequest, OutgoingAttachment, Part, PlanItem, Thread } from '../../shared/types'
 import { PLAN_TOOL } from '../../shared/types'
@@ -76,12 +76,13 @@ interface LivePanelProps {
   running: boolean
   approvals: ApprovalRequest[]
   queue: QueuedMessage[]
+  onContinue?: () => void
   onSendNow(index: number): void
   onRemove(index: number): void
 }
 
 /** What is happening now, pinned above the message box: the task list, the status and the queue. */
-export function LivePanel({ thread, live, running, approvals, queue, onSendNow, onRemove }: LivePanelProps) {
+export function LivePanel({ thread, live, running, approvals, queue, onContinue, onSendNow, onRemove }: LivePanelProps) {
   const plan = thread.plan ?? []
   const showPlan = plan.length > 0 && (running || plan.some((item) => item.status !== 'completed'))
   const interrupted = !running && thread.lastRun === 'aborted'
@@ -90,9 +91,14 @@ export function LivePanel({ thread, live, running, approvals, queue, onSendNow, 
   return (
     <div className="live-panel">
       {!running && (showPlan || interrupted) && (
-        <div className="plan-status" role="status">
-          {interrupted ? 'Execução interrompida.' : 'Nenhuma execução em andamento.'}
-          {showPlan && ' Tarefas não concluídas foram mantidas.'}
+        <div className="plan-paused">
+          <div className="plan-status" role="status">
+            {interrupted ? 'Execução interrompida.' : 'Nenhuma execução em andamento.'}
+            {showPlan && ' Tarefas não concluídas foram mantidas.'}
+          </div>
+          <button className="button continue-button" disabled={!onContinue} onClick={onContinue} title="Enviar “Continue de onde parou.” com o modelo selecionado">
+            <Play size={12} aria-hidden /> Continuar
+          </button>
         </div>
       )}
       {showPlan && <Plan items={plan} running={running} />}

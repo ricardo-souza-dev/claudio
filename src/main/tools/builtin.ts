@@ -105,11 +105,26 @@ function commandEnvironment(): NodeJS.ProcessEnv {
 function killTree(pid: number | undefined): void {
   if (!pid) return
   if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
-    let log = ''
-    killer.stdout.on('data', (chunk) => { log += chunk.toString() })
-    killer.stderr.on('data', (chunk) => { log += chunk.toString() })
-    killer.on('close', (code) => { void writeFile('test-results/cancel-debug.txt', `${pid} ${code}\n${log}`) })
+    // taskkill alone can miss a child created while it enumerates the tree.
+    // Visit both the pre-kill snapshot and orphaned children after each parent dies.
+    const script = [
+      '$pending = [System.Collections.Generic.Queue[int]]::new()',
+      '$seen = [System.Collections.Generic.HashSet[int]]::new()',
+      `$pending.Enqueue(${pid})`,
+      'while ($pending.Count -gt 0) {',
+      '  $targetId = $pending.Dequeue()',
+      '  if (-not $seen.Add($targetId)) { continue }',
+      '  $before = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $targetId" -ErrorAction SilentlyContinue)',
+      '  & "$env:SystemRoot\\System32\\taskkill.exe" /PID $targetId /T /F 2>$null | Out-Null',
+      '  $after = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $targetId" -ErrorAction SilentlyContinue)',
+      '  foreach ($descendant in ($before + $after)) { $pending.Enqueue([int]$descendant.ProcessId) }',
+      '}'
+    ].join('\n')
+    const killer = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'ignore', env: commandEnvironment() })
+    killer.on('error', () => {
+      // Best effort if the helper cannot start; never let its error crash Electron.
+      try { process.kill(pid, 'SIGKILL') } catch { /* Already gone. */ }
+    })
     return
   }
   try {

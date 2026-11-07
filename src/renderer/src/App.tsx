@@ -415,6 +415,7 @@ export function App() {
               running={running}
               approvals={state.approvals[thread.id] ?? []}
               queue={queue}
+              onContinue={model ? () => send('Continue de onde parou.') : undefined}
               onSendNow={sendQueuedNow}
               onRemove={(index) => updateQueue(queue.filter((_, position) => position !== index))}
             />

@@ -2063,8 +2063,22 @@ button.chip:hover {
   overflow-y: auto;
   font-size: 13px;
 }
-.plan-status {
+.plan-paused {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   margin-bottom: 6px;
+}
+.continue-button {
+  flex: none;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.plan-status {
+  flex: 1;
+  min-width: 180px;
   color: var(--ink-2);
   font-size: 12px;
 }
