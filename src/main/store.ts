@@ -39,7 +39,7 @@ const EMPTY: SettingsFile = {
   baseUrls: {},
   custom: [],
   mcp: null,
-  prefs: { memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: false }
+  prefs: { theme: 'system', memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: false }
 }
 
 async function writeAtomic(file: string, text: string): Promise<void> {
