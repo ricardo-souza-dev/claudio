@@ -1,4 +1,4 @@
-import { Folder, FolderOpen, PanelRight, Plus, Settings as SettingsIcon, Trash2, Wrench } from 'lucide-react'
+import { Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Trash2, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { chooseAutoModel, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, NEW_THREAD_TITLE, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
@@ -314,6 +314,17 @@ export function App() {
           <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}>
             <SettingsIcon size={15} aria-hidden /> Ajustes
           </button>
+          <div className="theme-picker" role="group" aria-label="Tema da aparência">
+            {([
+              { value: 'light', label: 'Tema claro', Icon: Sun },
+              { value: 'dark', label: 'Tema escuro', Icon: Moon },
+              { value: 'system', label: 'Seguir tema do sistema', Icon: Monitor }
+            ] as const).map(({ value, label, Icon }) => (
+              <button key={value} aria-label={label} title={label} aria-pressed={prefs.theme === value} onClick={() => void store.setPrefs({ theme: value })}>
+                <Icon size={14} aria-hidden />
+              </button>
+            ))}
+          </div>
         </div>
       </aside>
 

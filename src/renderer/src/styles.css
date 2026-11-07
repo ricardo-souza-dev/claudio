@@ -1132,8 +1132,37 @@ button:disabled {
 
 .sidebar-footer {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 10px 12px;
   border-top: 1px solid var(--rule);
+}
+.theme-picker {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.theme-picker button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 26px;
+  border-radius: 4px;
+  color: var(--ink-3);
+}
+.theme-picker button:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.theme-picker button[aria-pressed='true'] {
+  background: var(--thread-soft);
+  color: var(--thread);
 }
 .sidebar-settings {
   display: flex;

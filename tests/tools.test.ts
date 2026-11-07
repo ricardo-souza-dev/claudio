@@ -421,6 +421,18 @@ describe('armazenamento', () => {
     decrypt: (data) => Buffer.from(data.replace('cifrado:', ''), 'base64').toString()
   }
 
+  it('defaults old preferences to the system theme and persists a manual choice', async () => {
+    await writeFile(path.join(root, 'settings.json'), JSON.stringify({ prefs: { memory: 'old memory' } }))
+    const store = new SettingsStore(root, vault, {})
+    await store.load()
+    expect(store.prefs().theme).toBe('system')
+    expect(store.prefs().memory).toBe('old memory')
+    await store.setPrefs({ theme: 'dark' })
+    const reopened = new SettingsStore(root, vault, {})
+    await reopened.load()
+    expect(reopened.prefs().theme).toBe('dark')
+  })
+
   it('encrypts keys on disk and never lists them', async () => {
     const store = new SettingsStore(root, vault, {})
     await store.setKey('anthropic', 'sk-segredo')

@@ -89,6 +89,7 @@ async function start(): Promise<void> {
   const settings = new SettingsStore(dataDir, vault)
   const threads = new ThreadStore(dataDir)
   await settings.load()
+  nativeTheme.themeSource = settings.prefs().theme
   await threads.load()
 
   const attachments = new AttachmentStore(dataDir)
@@ -141,7 +142,11 @@ async function start(): Promise<void> {
   })
 
   handle('prefs.get', () => settings.prefs())
-  handle('prefs.set', (patch: Parameters<SettingsStore['setPrefs']>[0]) => settings.setPrefs(patch))
+  handle('prefs.set', async (patch: Parameters<SettingsStore['setPrefs']>[0]) => {
+    const prefs = await settings.setPrefs(patch)
+    nativeTheme.themeSource = prefs.theme
+    return prefs
+  })
 
   handle('providers.list', () => settings.providers())
   handle('providers.setKey', async (id: string, key: string | null) => {

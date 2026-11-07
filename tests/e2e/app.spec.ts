@@ -981,6 +981,37 @@ test('a conversation from before projects were required stays readable but canno
   await app.close()
 })
 
+test('appearance: sidebar theme controls apply immediately and survive a restart', async () => {
+  const { app, page, problems } = await launch()
+  const themes = page.getByRole('group', { name: 'Tema da aparência' })
+  await expect(themes.getByRole('button', { name: 'Seguir tema do sistema' })).toHaveAttribute('aria-pressed', 'true')
+  for (const [label, source, background] of [
+    ['Tema claro', 'light', '#f7f7f7'],
+    ['Tema escuro', 'dark', '#1e1e1e']
+  ] as const) {
+    await themes.getByRole('button', { name: label, exact: true }).click()
+    await expect(themes.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim())).toBe(background)
+    expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe(source)
+  }
+  await page.setViewportSize({ width: 760, height: 520 })
+  await expect(page.getByRole('button', { name: 'Ajustes', exact: true })).toBeInViewport()
+  await expect(themes).toBeInViewport()
+  expect(await page.locator('.sidebar').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  expect(problems).toEqual([])
+  await app.close()
+
+  const restarted = await launch()
+  const restored = restarted.page.getByRole('group', { name: 'Tema da aparência' })
+  await expect(restored.getByRole('button', { name: 'Tema escuro', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  expect(await restarted.app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark')
+  await restored.getByRole('button', { name: 'Seguir tema do sistema' }).click()
+  await expect(restored.getByRole('button', { name: 'Seguir tema do sistema' })).toHaveAttribute('aria-pressed', 'true')
+  expect(await restarted.app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('system')
+  expect(restarted.problems).toEqual([])
+  await restarted.app.close()
+})
+
 test('conversation management: new, switch, delete, shortcuts, narrow window, light and dark', async () => {
   await seedProviders()
   const { app, page, problems } = await launch()
