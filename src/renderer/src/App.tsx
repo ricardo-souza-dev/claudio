@@ -144,8 +144,8 @@ export function App() {
     const pending = queues[thread.id]
     if (!pending?.length) return
     const forced = sendNowRequested.current
-    const interrupted = thread.messages.findLast((message) => message.role === 'assistant')?.stop === 'aborted'
-    if (!forced && (interrupted || state.errors[thread.id])) return
+    const interrupted = thread.lastRun === 'aborted' || thread.messages.findLast((message) => message.role === 'assistant')?.stop === 'aborted'
+    if (!forced && (interrupted || thread.lastRun === 'error' || state.errors[thread.id])) return
     sendNowRequested.current = false
     setQueues((all) => ({ ...all, [thread.id]: pending.slice(1) }))
     sendRef.current(pending[0].text, pending[0].attachments)

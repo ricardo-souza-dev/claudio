@@ -117,6 +117,8 @@ export class Runner {
     const controller = new AbortController()
     this.active.set(thread.id, controller)
     const { deps } = this
+    let failed = false
+    delete thread.lastRun
     deps.emit({ type: 'run', threadId: thread.id, running: true })
     try {
       const text = request.text.trim()
@@ -150,9 +152,11 @@ export class Runner {
       await this.runAgent(thread, request.model, request.permissionMode, request.effort, controller.signal)
     } catch (error) {
       if (!(error instanceof AbortedError) && !controller.signal.aborted) {
+        failed = true
         deps.emit({ type: 'error', threadId: thread.id, text: (error as Error).message })
       }
     } finally {
+      thread.lastRun = controller.signal.aborted ? 'aborted' : failed ? 'error' : 'completed'
       thread.updatedAt = Date.now()
       this.publish(thread)
       await deps.save(thread).catch(() => undefined)
@@ -177,7 +181,9 @@ export class Runner {
       const startedAt = Date.now()
       let firstTokenAt: number | null = null
       try {
+        if (signal.aborted) throw new AbortedError()
         const loaded = this.deps.loadAttachments ? await this.deps.loadAttachments(messages, info) : messages
+        if (signal.aborted) throw new AbortedError()
         const result = await adapter.stream(
           {
             model: info,
@@ -208,7 +214,7 @@ export class Runner {
         }
         return { parts: result.parts, result, toolsDropped }
       } catch (error) {
-        if (error instanceof AbortedError) {
+        if (error instanceof AbortedError || signal.aborted) {
           const parts: Part[] = []
           if (partialReasoning) parts.push({ type: 'reasoning', text: partialReasoning })
           if (partialText) parts.push({ type: 'text', text: partialText })
@@ -262,7 +268,9 @@ export class Runner {
   }
 
   private async runAgent(thread: Thread, ref: ModelRef, mode: PermissionMode, effort: Effort | null | undefined, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return
     const { adapter, info } = await this.deps.resolveModel(ref)
+    if (signal.aborted) return
     const tools = [...this.deps.toolsFor(thread.workspace)].sort((a, b) => a.name.localeCompare(b.name))
     let turnTools = tools
 
@@ -357,8 +365,10 @@ export class Runner {
       if (decision === 'deny') {
         return { ...this.errorResult(call, signal.aborted ? 'Cancelado pelo usuário.' : 'O usuário negou esta ação.'), denied: true }
       }
+      if (signal.aborted) return this.errorResult(call, 'Cancelado pelo usuário.')
       if (decision === 'allow-always') thread.allowedTools.push(tool.name)
     }
+    if (signal.aborted) return this.errorResult(call, 'Cancelado pelo usuário.')
     if (tool.name === PLAN_TOOL) thread.plan = (input as { items: PlanItem[] }).items
     return this.run(tool, call, input, signal)
   }

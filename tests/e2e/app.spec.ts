@@ -741,7 +741,26 @@ test('while working: context, tokens, strength of the model, task list and queue
   await expect(page.locator('.plan-item')).toHaveCount(3, { timeout: 15_000 })
   await idle(page)
   await expect(page.locator('.tool-row', { hasText: 'update_plan' })).toHaveCount(0)
+  await expect(page.locator('.plan .spin')).toHaveCount(0)
+  await expect(page.locator('.plan-status')).toContainText('Nenhuma execução em andamento.')
   await shot(page, '21-tarefas')
+
+  // Cancelling preserves unfinished tasks, but no longer makes them look active.
+  await send(page, 'plano-interrompivel ferramenta: update_plan {"items":[{"content":"Revisar distribuição","status":"in_progress"},{"content":"Preparar macOS","status":"pending"}]}')
+  await expect(page.locator('.plan .spin')).toHaveCount(1, { timeout: 15_000 })
+  await expect(page.locator('.run-status')).toContainText('Escrevendo', { timeout: 15_000 })
+  await page.getByRole('button', { name: 'Interromper', exact: true }).click()
+  await idle(page)
+  await expect(page.locator('.plan-status')).toContainText('Execução interrompida.')
+  await expect(page.locator('.plan .spin')).toHaveCount(0)
+  await expect(page.locator('.run-status')).toHaveCount(0)
+  await expect(page.locator('.plan-item')).toHaveCount(2)
+  const cancelledThread = await page.evaluate(async () => {
+    const summaries = await window.uni.threads.list()
+    return window.uni.threads.get(summaries[0].id)
+  })
+  expect(cancelledThread?.lastRun).toBe('aborted')
+  expect(cancelledThread?.plan?.map((item) => item.status)).toEqual(['in_progress', 'pending'])
 
   // Time and tokens count up while the model works.
   await pickModel(page, 'chat-mock')
@@ -775,6 +794,20 @@ test('while working: context, tokens, strength of the model, task list and queue
   await expect(page.locator('.queued-text')).toHaveText('segunda da fila')
 
   await page.getByRole('button', { name: 'Remover da fila: segunda da fila' }).click()
+  await expect(page.locator('.queued')).toHaveCount(0)
+
+  // Cancelling a tool approval must not send the next queued message automatically.
+  await send(page, 'ferramenta: run_command {"command":"echo nao-executar"}')
+  await expect(page.getByText('Executar este comando?')).toBeVisible({ timeout: 15_000 })
+  await box.fill('fila depois de ferramenta cancelada')
+  await box.press('Enter')
+  await page.getByRole('button', { name: 'Interromper', exact: true }).click()
+  await idle(page)
+  await expect(page.getByText('Executar este comando?')).toHaveCount(0)
+  await expect(page.locator('.plan-status')).toContainText('Execução interrompida.')
+  await expect(page.locator('.queued-text')).toHaveText('fila depois de ferramenta cancelada')
+  await expect(page.locator('.user-text').last()).toContainText('ferramenta: run_command')
+  await page.getByRole('button', { name: 'Remover da fila: fila depois de ferramenta cancelada' }).click()
   await expect(page.locator('.queued')).toHaveCount(0)
 
   // "Enviar agora" interrupts the work in progress and sends the message.

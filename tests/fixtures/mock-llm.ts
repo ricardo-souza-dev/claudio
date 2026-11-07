@@ -54,7 +54,10 @@ interface Plan {
 }
 
 function plan(lastUserText: string, hasToolResult: boolean, label: string, contextChars: number): Plan {
-  if (hasToolResult) return { kind: 'text', text: `[${label}] ferramenta concluída.` }
+  if (hasToolResult) {
+    if (lastUserText.includes('plano-interrompivel')) return { kind: 'slow', text: 'Continuando o trabalho planejado. '.repeat(20) }
+    return { kind: 'text', text: `[${label}] ferramenta concluída.` }
+  }
   if (lastUserText.includes('Changes to describe')) {
     return { kind: 'text', text: 'feat(painel): adiciona a segunda linha\n\nMostra o que mudou no README.' }
   }

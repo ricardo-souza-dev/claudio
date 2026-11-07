@@ -370,6 +370,36 @@ describe('segurança das ferramentas', () => {
 })
 
 describe('interrupções e falhas', () => {
+  it('records cancellation during approval without changing the assistant history or executing the tool', async () => {
+    const h = harness('allow')
+    const thread = newThread()
+    h.onApproval = () => h.runner.stop(thread.id)
+    await h.runner.send(thread, agent(thread, 'ferramenta: write_file {"path":"cancelado.txt","content":"não executar"}', GPT))
+    expect(thread.lastRun).toBe('aborted')
+    expect(h.runner.hasActiveRuns).toBe(false)
+    expect(h.events.at(-1)).toEqual({ type: 'run', threadId: thread.id, running: false })
+    expect(lastAssistant(thread).stop).toBe('tool_use')
+    expect(thread.messages.at(-1)?.parts).toEqual([expect.objectContaining({ type: 'tool_result', isError: true, content: 'Cancelado pelo usuário.' })])
+    expect(errorsOf(h)).toEqual([])
+    const { readFile } = await import('node:fs/promises')
+    await expect(readFile(path.join(workspace, 'cancelado.txt'))).rejects.toThrow()
+    h.onApproval = undefined
+    await h.runner.send(thread, agent(thread, 'continue', GPT))
+    expect(thread.lastRun).toBe('completed')
+  })
+
+  it('marks cancellation during a running command and leaves no active execution', async () => {
+    const h = harness('allow')
+    const thread = newThread()
+    h.onApproval = () => { setTimeout(() => h.runner.stop(thread.id), 200) }
+    await h.runner.send(thread, agent(thread, 'ferramenta: run_command {"command":"node -e \\\"setTimeout(() => {}, 60000)\\\""}', CLAUDE))
+    expect(thread.lastRun).toBe('aborted')
+    expect(h.runner.hasActiveRuns).toBe(false)
+    expect(lastAssistant(thread).stop).toBe('tool_use')
+    expect(thread.messages.at(-1)?.parts).toEqual([expect.objectContaining({ type: 'tool_result', isError: true, content: expect.stringContaining('Cancelado pelo usuário.') })])
+    expect(errorsOf(h)).toEqual([])
+  })
+
   for (const model of [CLAUDE, GPT, GEMINI, COMPAT]) {
     it(`keeps what ${model.provider} streamed when interrupted, and the thread stays usable`, async () => {
       const h = harness()

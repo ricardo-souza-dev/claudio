@@ -28,7 +28,24 @@ A ilustração da página é marcada como **ilustração do fluxo**, não como c
 
 O site consulta a API pública do GitHub, sem token. Se não existir release, não inventa link de download. Se houver indisponibilidade ou limite de consultas da API, mantém o link para a página de lançamentos. A consulta faz o navegador entrar em contato com o GitHub; não foram adicionados analytics nem cookies pelo site.
 
-## Publicar o site
+## Publicar o site na Vercel
+
+O `vercel.json` na raiz configura um build estático sem instalar as dependências do Electron.
+
+1. Envie as alterações, incluindo `vercel.json`, para o GitHub.
+2. Na Vercel, escolha **Add New → Project** e importe `ricardo-souza-dev/claudio`.
+3. Mantenha **Root Directory** na raiz do repositório, não em `site/`.
+4. O preset deve ser **Other**. O arquivo de configuração define o build `node scripts/build-site.mjs`, a saída `dist/site` e a instalação sem dependências.
+5. Não configure chaves de API de modelos, tokens GitHub ou outras variáveis: o site não precisa delas.
+6. Clique em **Deploy**. A Vercel fornece um endereço `*.vercel.app` com HTTPS.
+7. Confira a branch de produção `main`. Novos pushes nela passam a atualizar o site automaticamente.
+8. Para domínio próprio, use **Settings → Domains** e configure o DNS conforme indicado pela Vercel.
+
+Os instaladores e o feed de atualização continuam no GitHub Releases, independentemente do domínio do site. Não é preciso habilitar GitHub Pages para usar Vercel. Se o workflow **Site** do Pages já estiver habilitado e você não quiser a segunda hospedagem, desative-o em **GitHub → Actions → Site → Disable workflow**.
+
+A publicação na conta Vercel ainda depende da conexão com o GitHub e do primeiro deploy; criar a configuração local não publica o site.
+
+## Publicar o site no GitHub Pages (alternativa)
 
 1. Envie o código para `main` no repositório `ricardo-souza-dev/claudio`.
 2. No GitHub, abra **Settings → Pages → Build and deployment → Source → GitHub Actions**.

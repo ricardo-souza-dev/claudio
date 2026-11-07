@@ -1,4 +1,4 @@
-import { Check, CornerDownLeft, Loader2, X } from 'lucide-react'
+import { Check, CornerDownLeft, Loader2, Pause, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ApprovalRequest, OutgoingAttachment, Part, PlanItem, Thread } from '../../shared/types'
 import { PLAN_TOOL } from '../../shared/types'
@@ -8,13 +8,13 @@ import type { LiveTurn } from './store'
 
 const CHARS_PER_TOKEN = 4
 
-function Plan({ items }: { items: PlanItem[] }) {
+function Plan({ items, running }: { items: PlanItem[]; running: boolean }) {
   return (
-    <ul className="plan" aria-label="Tarefas em andamento">
+    <ul className="plan" aria-label={running ? 'Tarefas em andamento' : 'Tarefas pendentes'}>
       {items.map((item, index) => (
         <li key={index} className={`plan-item ${item.status}`}>
           <span className="plan-mark" aria-hidden>
-            {item.status === 'completed' ? <Check size={13} /> : item.status === 'in_progress' ? <Loader2 size={13} className="spin" /> : <span className="plan-dot" />}
+            {item.status === 'completed' ? <Check size={13} /> : item.status === 'in_progress' ? (running ? <Loader2 size={13} className="spin" /> : <Pause size={13} />) : <span className="plan-dot" />}
           </span>
           {item.content}
         </li>
@@ -84,11 +84,18 @@ interface LivePanelProps {
 export function LivePanel({ thread, live, running, approvals, queue, onSendNow, onRemove }: LivePanelProps) {
   const plan = thread.plan ?? []
   const showPlan = plan.length > 0 && (running || plan.some((item) => item.status !== 'completed'))
-  if (!showPlan && !running && queue.length === 0) return null
+  const interrupted = !running && thread.lastRun === 'aborted'
+  if (!showPlan && !running && !interrupted && queue.length === 0) return null
 
   return (
     <div className="live-panel">
-      {showPlan && <Plan items={plan} />}
+      {!running && (showPlan || interrupted) && (
+        <div className="plan-status" role="status">
+          {interrupted ? 'Execução interrompida.' : 'Nenhuma execução em andamento.'}
+          {showPlan && ' Tarefas não concluídas foram mantidas.'}
+        </div>
+      )}
+      {showPlan && <Plan items={plan} running={running} />}
       {running && <RunStatus thread={thread} live={live} approvals={approvals} />}
       {queue.length > 0 && (
         <ul className="queue" aria-label="Mensagens na fila">

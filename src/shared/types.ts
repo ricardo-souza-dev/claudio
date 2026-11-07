@@ -138,6 +138,8 @@ export interface Thread {
   messages: Message[]
   /** The task list the current model keeps while it works. Never sent back to models. */
   plan?: PlanItem[]
+  /** Last execution outcome, separate from provider messages (which remain append-only). */
+  lastRun?: 'completed' | 'aborted' | 'error'
 }
 
 export interface ThreadSummary {

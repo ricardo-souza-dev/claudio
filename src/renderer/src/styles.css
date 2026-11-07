@@ -2063,6 +2063,11 @@ button.chip:hover {
   overflow-y: auto;
   font-size: 13px;
 }
+.plan-status {
+  margin-bottom: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
 .plan-item {
   display: flex;
   align-items: baseline;
