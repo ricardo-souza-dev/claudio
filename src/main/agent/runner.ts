@@ -153,10 +153,10 @@ export class Runner {
         deps.emit({ type: 'error', threadId: thread.id, text: (error as Error).message })
       }
     } finally {
-      this.active.delete(thread.id)
       thread.updatedAt = Date.now()
       this.publish(thread)
       await deps.save(thread).catch(() => undefined)
+      this.active.delete(thread.id)
       deps.emit({ type: 'run', threadId: thread.id, running: false })
     }
   }

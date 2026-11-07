@@ -17,7 +17,17 @@ Toda conversa parte de uma pasta no seu computador, para que qualquer modelo tra
 | **Uma memória** | A memória global e os arquivos `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` e `.cursorrules` também chegam iguais a todos. |
 | **Uma caixa de ferramentas** | Arquivos, comandos e servidores MCP ficam disponíveis para qualquer modelo que aceite ferramentas, mesmo sem suporte próprio a MCP. |
 
-## Como rodar
+## Downloads e atualizações
+
+O site de apresentação fica em `site/`. Para visualizar: `npm run site:dev`.
+
+O instalador para Windows x64 é gerado com `npm run dist:win`, em `dist/`. A distribuição é uma versão de testes; um download público só existe depois de publicar uma release no GitHub. macOS e Linux ainda não estão disponíveis.
+
+O app instalado verifica novas versões e permite baixar e reiniciar para atualizar, sem instalar automaticamente ao fechar. A instalação é bloqueada durante execuções do agente. Conversas e configurações ficam fora da pasta do programa.
+
+Veja [o guia de distribuição](docs/distribuicao.md) para publicar o site, criar releases, configurar assinatura e validar atualizações. O instalador local atual não tem assinatura de código; a atualização entre duas versões instaladas ainda precisa de validação.
+
+## Como rodar em desenvolvimento
 
 Requer Node.js 22 ou mais recente.
 
@@ -109,4 +119,4 @@ Os testes usam um servidor local que simula os quatro protocolos, passando pelos
 - Imagens devolvidas por ferramentas MCP são omitidas, inclusive capturas de tela do navegador.
 - MCP remoto funciona com cabeçalhos fixos. OAuth ainda não é suportado.
 - Usa chaves de API, cobradas à parte das assinaturas como ChatGPT Plus ou Claude Max.
-- Ainda não há instalador.
+- Instalador disponível para gerar localmente apenas no Windows x64; assinatura, publicação e atualização entre versões instaladas ainda precisam de validação.

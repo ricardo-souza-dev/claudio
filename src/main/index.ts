@@ -224,6 +224,7 @@ async function start(): Promise<void> {
     if (!thread) throw new Error('Conversa não encontrada.')
     if (!thread.workspace) throw new Error('Toda conversa precisa de um projeto. Abra uma conversa nova em uma pasta.')
     await resolveProjectRoot(thread.workspace)
+    if (updates.isInstalling) throw new Error('O Claudio está reiniciando para atualizar. Aguarde a reabertura.')
     if (runner.isRunning(thread.id)) throw new Error('Esta conversa já está em andamento.')
     void runner.send(thread, request).then(() => emit({ type: 'threads', threads: threads.list() }))
   })

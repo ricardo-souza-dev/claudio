@@ -13,6 +13,9 @@ export interface UpdateEngine {
 
 export class UpdateService {
   private current: UpdateStatus
+  private installing = false
+
+  get isInstalling(): boolean { return this.installing }
 
   constructor(private engine: UpdateEngine, version: string, enabled: boolean, private busy: () => boolean, private emit: (status: UpdateStatus) => void) {
     this.current = { state: enabled ? 'idle' : 'unavailable', currentVersion: version }
@@ -54,6 +57,8 @@ export class UpdateService {
   install(): void {
     if (this.current.state !== 'downloaded') throw new Error('Baixe a atualização antes de instalar.')
     if (this.busy()) throw new Error('Espere todas as execuções terminarem antes de atualizar.')
-    this.engine.quitAndInstall(false, true)
+    if (this.installing) return
+    this.installing = true
+    try { this.engine.quitAndInstall(false, true) } catch (error) { this.installing = false; throw error }
   }
 }

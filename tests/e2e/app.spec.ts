@@ -1159,5 +1159,16 @@ test('update settings show installed version without network access in developme
   await expect(page.getByRole('button', { name: 'Verificar atualizações', exact: true })).toHaveCount(0)
   const status = await page.evaluate(() => window.uni.updates.check())
   expect(status.state).toBe('unavailable')
+  await page.getByRole('button', { name: 'Voltar à conversa', exact: false }).click()
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('uni:event', { type: 'update', status: { state: 'available', currentVersion: '0.1.0', version: '0.2.0' } })
+  })
+  await expect(page.getByRole('button', { name: 'Baixar atualização', exact: true })).toBeVisible()
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('uni:event', { type: 'update', status: { state: 'downloaded', currentVersion: '0.1.0', version: '0.2.0' } })
+  })
+  await page.getByRole('button', { name: 'Reiniciar e atualizar', exact: true }).click()
+  // Synthetic UI events cannot bypass the main process download requirement.
+  await expect(page.getByRole('alert')).toContainText('Baixe a atualização antes de instalar.')
   await app.close()
 })

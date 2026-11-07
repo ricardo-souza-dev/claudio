@@ -333,7 +333,6 @@ export function App() {
       </aside>
 
       <main className="main">
-        <Updates compact />
         <header className="topbar">
           <div className="topbar-title">{needsProject ? 'Escolha um projeto' : thread.title}</div>
           {!needsProject && (
@@ -362,6 +361,7 @@ export function App() {
             </div>
           )}
         </header>
+        <Updates compact />
 
         {needsProject ? (
           <ProjectChooser recent={recentProjects} error={projectError} onChoose={(folder) => void chooseProject(folder)} />
