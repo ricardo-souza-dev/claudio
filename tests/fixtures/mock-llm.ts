@@ -84,8 +84,10 @@ function inspect(protocol: RecordedRequest['protocol'], body: any): { text: stri
   if (protocol === 'anthropic') {
     const last = body.messages.at(-1)
     const blocks = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : last.content
+    const user = body.messages.findLast((message: any) => message.role === 'user' && (typeof message.content === 'string' || message.content.some((part: any) => part.type === 'text')))
+    const userBlocks = typeof user?.content === 'string' ? [{ type: 'text', text: user.content }] : user?.content ?? []
     return {
-      text: blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join(' '),
+      text: userBlocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join(' '),
       hasToolResult: blocks.some((b: any) => b.type === 'tool_result')
     }
   }

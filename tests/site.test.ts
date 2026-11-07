@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error The static website intentionally ships plain browser JavaScript.
 import { windowsRelease, loadRelease } from '../site/releases.js'
@@ -10,6 +11,27 @@ function doc() {
   const elements = { 'release-status': { textContent: '' }, download: { hidden: true, href: '' } }
   return { elements, getElementById: (id: keyof typeof elements) => elements[id] }
 }
+describe('website presentation', () => {
+  it('ships local fonts, their license and a full-size social preview', async () => {
+    const html = await readFile('site/index.html', 'utf8')
+    const css = await readFile('site/style.css', 'utf8')
+    expect(html).toContain('DEMONSTRAÇÃO ILUSTRATIVA')
+    expect(html).toContain('name="twitter:card" content="summary_large_image"')
+    expect(html).toContain('property="og:image" content="https://claudio-mu.vercel.app/social.png"')
+    expect(css).toContain('prefers-reduced-motion:reduce')
+    expect(css).not.toMatch(/https?:\/\//)
+    for (const font of ['regular', 'medium', 'semibold']) {
+      const bytes = await readFile(`site/fonts/sans-${font}.woff2`)
+      expect(bytes.toString('ascii', 0, 4)).toBe('wOF2')
+    }
+    expect(await readFile('site/fonts/LICENSE.txt', 'utf8')).toContain('SIL OPEN FONT LICENSE')
+    const image = await readFile('site/social.png')
+    expect(image.subarray(1, 4).toString()).toBe('PNG')
+    expect(image.readUInt32BE(16)).toBe(1200)
+    expect(image.readUInt32BE(20)).toBe(630)
+  })
+})
+
 describe('website downloads', () => {
   it('accepts only Windows installers in this repository', () => {
     expect(windowsRelease(release())).toEqual({ version: 'v0.1.0', url, size: 100 })

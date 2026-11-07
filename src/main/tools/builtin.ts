@@ -105,7 +105,11 @@ function commandEnvironment(): NodeJS.ProcessEnv {
 function killTree(pid: number | undefined): void {
   if (!pid) return
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+    const killer = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
+    let log = ''
+    killer.stdout.on('data', (chunk) => { log += chunk.toString() })
+    killer.stderr.on('data', (chunk) => { log += chunk.toString() })
+    killer.on('close', (code) => { void writeFile('test-results/cancel-debug.txt', `${pid} ${code}\n${log}`) })
     return
   }
   try {
@@ -116,6 +120,7 @@ function killTree(pid: number | undefined): void {
 }
 
 function runCommand(command: string, cwd: string, timeoutMs: number, signal: AbortSignal): Promise<ToolResult> {
+  if (signal.aborted) return Promise.resolve({ content: 'Cancelado pelo usuário.', isError: true })
   return new Promise((resolve) => {
     const windows = process.platform === 'win32'
     const child = windows

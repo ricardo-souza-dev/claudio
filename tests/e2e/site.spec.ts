@@ -10,7 +10,18 @@ let url: string
 test.beforeAll(async () => {
   server = createServer(async (request, response) => {
     const name = new URL(request.url!, 'http://localhost').pathname
-    const files: Record<string, [string, string]> = { '/': ['site/index.html', 'text/html'], '/style.css': ['site/style.css', 'text/css'], '/releases.js': ['site/releases.js', 'text/javascript'], '/favicon.svg': ['site/favicon.svg', 'image/svg+xml'], '/facts.json': ['', 'application/json'] }
+    const files: Record<string, [string, string]> = {
+      '/': ['site/index.html', 'text/html'],
+      '/style.css': ['site/style.css', 'text/css'],
+      '/releases.js': ['site/releases.js', 'text/javascript'],
+      '/experience.js': ['site/experience.js', 'text/javascript'],
+      '/favicon.svg': ['site/favicon.svg', 'image/svg+xml'],
+      '/social.png': ['site/social.png', 'image/png'],
+      '/fonts/sans-regular.woff2': ['site/fonts/sans-regular.woff2', 'font/woff2'],
+      '/fonts/sans-medium.woff2': ['site/fonts/sans-medium.woff2', 'font/woff2'],
+      '/fonts/sans-semibold.woff2': ['site/fonts/sans-semibold.woff2', 'font/woff2'],
+      '/facts.json': ['', 'application/json']
+    }
     const file = files[name]
     if (!file) { response.writeHead(404).end(); return }
     response.setHeader('Content-Type', file[1])
@@ -31,18 +42,47 @@ test('website: release download, mobile layout and unavailable release', async (
     const page = await nextWindow
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
     let available = true
     await page.route('https://api.github.com/**', (route) => route.fulfill({ status: available ? 200 : 404, contentType: 'application/json', body: JSON.stringify({ tag_name: 'v0.1.0', assets: [{ name: 'Claudio-Setup-0.1.0-x64.exe', size: 104857600, browser_download_url: 'https://github.com/ricardo-souza-dev/claudio/releases/download/v0.1.0/Claudio-Setup-0.1.0-x64.exe' }] }) }))
     await page.goto(url)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Troque o modelo.Não a conversa.')
     await expect(page.locator('#download')).toBeVisible()
     await expect(page.locator('#download')).toHaveAttribute('href', /github.com\/ricardo-souza-dev\/claudio\/releases\/download\//)
+    await page.evaluate(() => document.fonts.ready)
+    expect(await page.evaluate(() => document.fonts.check('400 16px Plex') && document.fonts.check('500 16px Plex'))).toBe(true)
+    await expect(page.getByRole('tab', { name: '01 Abra seu projeto' })).toHaveAttribute('aria-selected', 'true')
+    await page.getByRole('tab', { name: '03 Troque sem recomeçar' }).click()
+    await expect(page.getByRole('tabpanel')).toContainText('Outro modelo assume')
+    await expect(page.locator('#demonstracao')).toHaveAttribute('data-active-step', '2')
+    await page.getByRole('tab', { name: '03 Troque sem recomeçar' }).press('ArrowLeft')
+    await expect(page.getByRole('tab', { name: '02 Construa o contexto' })).toBeFocused()
+    await expect(page.getByRole('tabpanel')).toContainText('Arquivos lidos')
+    await page.keyboard.press('Home')
+    await expect(page.getByRole('tab', { name: '01 Abra seu projeto' })).toBeFocused()
+    await page.keyboard.press('ArrowLeft')
+    await expect(page.getByRole('tab', { name: '03 Troque sem recomeçar' })).toBeFocused()
+    await page.keyboard.press('End')
+    await expect(page.getByRole('tab', { selected: true })).toHaveCount(1)
+    await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'step-switch')
     await page.getByText('Como o aplicativo é atualizado?', { exact: true }).click()
     await expect(page.getByText('O app instalado consulta novas versões', { exact: false })).toBeVisible()
+    await page.getByText('Como o aplicativo é atualizado?', { exact: true }).click()
     await page.screenshot({ path: 'test-results/site-desktop.png', fullPage: true })
+    for (const width of [320, 390, 620, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 844 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`).toBe(true)
+    }
     await page.setViewportSize({ width: 390, height: 844 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.getByRole('tab', { name: '02 Construa o contexto' }).click()
+    await expect(page.getByRole('tabpanel')).toContainText('Arquivos lidos')
     await page.screenshot({ path: 'test-results/site-mobile.png', fullPage: true })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)).toBe('auto')
+    await page.getByRole('link', { name: 'Baixar Claudio', exact: false }).click()
+    await expect(page.locator('#downloads')).toBeInViewport()
+    await expect(page.locator('#download')).toBeVisible()
+    expect((await page.request.get(`${url}/social.png`)).ok()).toBe(true)
     available = false
     await page.reload()
     await expect(page.locator('#release-status')).toContainText('ainda não foi publicado')

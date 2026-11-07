@@ -16,6 +16,7 @@
     "test:e2e": "electron-vite build && playwright test",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "site:build": "node scripts/build-site.mjs",
+    "site:social": "node scripts/make-site-social.mjs",
     "site:dev": "vite site --host 127.0.0.1"
   },
   "dependencies": {

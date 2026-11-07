@@ -194,6 +194,15 @@ describe('comandos', () => {
     expect(result.content).not.toContain('vazou')
   }, 20_000)
 
+  it('never starts a command whose signal was already cancelled', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const command = process.platform === 'win32' ? 'Set-Content cancelado.txt executou' : 'echo executou > cancelado.txt'
+    const result = await tool('run_command').run({ command }, controller.signal)
+    expect(result).toEqual({ content: 'Cancelado pelo usuário.', isError: true })
+    await expect(readFile(path.join(root, 'cancelado.txt'))).rejects.toThrow()
+  })
+
   it('stops a command when interrupted', async () => {
     const controller = new AbortController()
     const command = process.platform === 'win32' ? 'Start-Sleep -Seconds 30' : 'sleep 30'
