@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowDownUp, ArrowUp, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
+import { ArrowDown, ArrowDownUp, ArrowUp, Check, CheckCircle2, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GitAction, GitFile, GitStatus, ModelRef, PrListing, ProjectFile, ProjectRepos, RepoRef } from '../../shared/types'
 import { folderName, remoteErrorMessage, timeAgo } from './format'
@@ -111,11 +111,14 @@ function Viewer({ threadId, viewing, onClose }: { threadId: string; viewing: Vie
   )
 }
 
-function Section({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+function Section({ title, count, actions, children }: { title: string; count?: number; actions?: ReactNode; children: ReactNode }) {
   return (
     <section className="panel-section">
       <header className="panel-section-head">
-        <h3>{title}</h3>
+        <h3 aria-label={count === undefined ? undefined : `${title} (${count})`}>
+          {title}
+          {count !== undefined && count > 0 && <span className="section-count" aria-hidden>{count}</span>}
+        </h3>
         {actions}
       </header>
       {children}
@@ -252,7 +255,7 @@ function PullRequests({ threadId, repo, status, onStatus, onError }: { threadId:
         </div>
       )}
       {listing?.error && <p className="panel-empty">{listing.error.split('\n')[0]}</p>}
-      {listing && !listing.error && listing.prs.length === 0 && <p className="panel-empty">Nenhum PR aberto.</p>}
+      {listing && !listing.error && listing.prs.length === 0 && <p className="panel-empty pr-empty"><GitPullRequest size={14} aria-hidden /> Nenhum PR aberto.</p>}
       <ul className="pr-list">
         {listing?.prs.map((pr) => (
           <li key={pr.number} className={`pr${pr.branch === status.branch ? ' current' : ''}`}>
@@ -363,7 +366,7 @@ function GitTab({
   const remote = status.branches.filter((branch) => branch.remote)
 
   return (
-    <>
+    <div className="git-workspace">
       <div className="git-branch">
         <BranchIcon size={13} aria-hidden />
         <select aria-label="Branch" value={status.branch ?? ''} disabled={busy !== null} onChange={(event) => void act({ type: 'switch', branch: event.target.value })}>
@@ -412,9 +415,14 @@ function GitTab({
         <div className="git-sync">
           <span className="git-counts" title={status.upstream ? `Comparado a ${status.upstream}` : 'Esta branch ainda não está no remoto'}>
             {status.upstream ? (
-              <>
-                <ArrowUp size={11} aria-hidden /> {status.ahead} <ArrowDown size={11} aria-hidden /> {status.behind}
-              </>
+              status.ahead === 0 && status.behind === 0 ? (
+                <><Check size={12} aria-hidden /> Em dia</>
+              ) : (
+                <>
+                  <span><ArrowUp size={11} aria-hidden /> {status.ahead}</span>
+                  <span><ArrowDown size={11} aria-hidden /> {status.behind}</span>
+                </>
+              )
             ) : (
               'Só local'
             )}
@@ -438,7 +446,7 @@ function GitTab({
         </p>
       )}
 
-      <Section title={`Preparadas (${staged.length})`} actions={staged.length > 0 ? <button className="panel-link" onClick={() => void act({ type: 'unstage', paths: staged.map((file) => file.path) })}>Tirar todas</button> : undefined}>
+      <Section title="Preparadas" count={staged.length} actions={staged.length > 0 ? <button className="panel-link" onClick={() => void act({ type: 'unstage', paths: staged.map((file) => file.path) })}>Tirar todas</button> : undefined}>
         {staged.length > 0 && (
           <ul className="git-files">
             {staged.map((file) => (
@@ -455,35 +463,47 @@ function GitTab({
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && event.ctrlKey && staged.length > 0 && message.trim()) {
+              if (event.key === 'Enter' && event.ctrlKey && busy === null && staged.length > 0 && message.trim()) {
                 void act({ type: 'commit', message }, () => setMessage(''))
               }
             }}
           />
-          <button
-            className="commit-generate"
-            disabled={generating || !commitModel || status.files.length === 0}
-            aria-label="Gerar mensagem do commit com IA"
-            title={
-              !commitModel
-                ? 'Conecte um modelo para gerar a mensagem'
-                : status.files.length === 0
-                  ? 'Não há alterações para descrever'
-                  : `Gerar com ${commitModel.label}, lendo ${staged.length > 0 ? 'o que está preparado' : 'todas as alterações'}`
-            }
-            onClick={() => void generateMessage()}
-          >
-            {generating ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
-          </button>
+          <div className="commit-box-footer">
+            <span className="commit-hint">{staged.length > 0 ? `${staged.length} ${staged.length === 1 ? 'arquivo no commit' : 'arquivos no commit'}` : 'Prepare os arquivos para começar'}</span>
+            <button
+              className="commit-generate"
+              disabled={generating || !commitModel || status.files.length === 0}
+              aria-label="Gerar mensagem do commit com IA"
+              title={
+                !commitModel
+                  ? 'Conecte um modelo para gerar a mensagem'
+                  : status.files.length === 0
+                    ? 'Não há alterações para descrever'
+                    : `Gerar com ${commitModel.label}, lendo ${staged.length > 0 ? 'o que está preparado' : 'todas as alterações'}`
+              }
+              onClick={() => void generateMessage()}
+            >
+              {generating ? <Loader2 size={13} className="spin" aria-hidden /> : <Sparkles size={13} aria-hidden />}
+              <span>{generating ? 'Gerando…' : 'Gerar com IA'}</span>
+            </button>
+          </div>
         </div>
-        <button className="button primary commit-button" disabled={busy !== null || staged.length === 0 || !message.trim()} onClick={() => void act({ type: 'commit', message }, () => setMessage(''))}>
-          Fazer commit
+        <button className="button primary commit-button" aria-label="Fazer commit" disabled={busy !== null || staged.length === 0 || !message.trim()} onClick={() => void act({ type: 'commit', message }, () => setMessage(''))}>
+          {busy === 'commit' ? <Loader2 size={14} className="spin" aria-hidden /> : <Check size={14} aria-hidden />}
+          <span>{busy === 'commit' ? 'Criando commit…' : 'Fazer commit'}</span>
+          <kbd aria-hidden>Ctrl ↵</kbd>
         </button>
       </Section>
 
-      <Section title={`Alterações (${changed.length})`} actions={changed.length > 0 ? <button className="panel-link" onClick={() => void act({ type: 'stage', paths: changed.map((file) => file.path) })}>Preparar todas</button> : undefined}>
+      <Section title="Alterações" count={changed.length} actions={changed.length > 0 ? <button className="panel-link" onClick={() => void act({ type: 'stage', paths: changed.map((file) => file.path) })}>Preparar todas</button> : undefined}>
         {changed.length === 0 ? (
-          <p className="panel-empty">Nada alterado.</p>
+          <div className="git-clean">
+            <CheckCircle2 size={18} aria-hidden />
+            <div>
+              <strong>{staged.length > 0 ? 'Tudo preparado' : 'Tudo em dia'}</strong>
+              <p>{staged.length > 0 ? 'Nenhuma alteração fora do commit.' : 'Nenhuma alteração pendente nesta pasta.'}</p>
+            </div>
+          </div>
         ) : (
           <ul className="git-files">
             {changed.map((file) => (
@@ -501,13 +521,17 @@ function GitTab({
             {status.commits.map((commit) => (
               <li key={commit.hash} className="commit" title={`${commit.hash} · ${commit.author}`}>
                 <span className="commit-subject">{commit.subject}</span>
-                <span className="commit-when">{timeAgo(commit.at)}</span>
+                <div className="commit-meta">
+                  <span className="commit-hash">{commit.hash.slice(0, 7)}</span>
+                  <span className="commit-author">{commit.author}</span>
+                  <span className="commit-when">{timeAgo(commit.at)}</span>
+                </div>
               </li>
             ))}
           </ul>
         </Section>
       )}
-    </>
+    </div>
   )
 }
 

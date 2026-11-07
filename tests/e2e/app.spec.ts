@@ -471,8 +471,21 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await openProject(app, page)
   const panel = page.getByRole('complementary', { name: /^Projeto/ })
   await expect(panel.getByLabel('Branch', { exact: true })).toHaveValue('principal')
-  await expect(panel.getByText('Nada alterado.')).toBeVisible()
-  await expect(panel.getByText('Primeiro commit')).toBeVisible()
+  await expect(panel.getByText('Tudo em dia', { exact: true })).toBeVisible()
+  await expect(panel.getByText('Nenhuma alteração pendente nesta pasta.')).toBeVisible()
+  await expect(panel.getByText('Primeiro commit', { exact: true })).toBeVisible()
+  await expect(panel.locator('.section-count')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Gerar mensagem do commit com IA' })).toBeDisabled()
+  await expect(panel.getByRole('button', { name: 'Fazer commit' })).toBeDisabled()
+  await expect(panel.locator('.commit-hash').first()).toHaveText(repo('rev-parse', '--short=7', 'HEAD'))
+  // The refined surfaces stay readable and contained in either system theme.
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expect(panel.locator('.git-clean')).toBeVisible()
+    await expect(panel.locator('.commit-box')).toBeVisible()
+    expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    await shot(page, `painel-premium-${colorScheme}`)
+  }
   // With a remote but no upstream yet, the branch can be published in one click.
   await expect(panel.getByRole('button', { name: 'Publicar principal no remoto' })).toBeVisible()
 
@@ -505,6 +518,9 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(panel.getByRole('button', { name: 'Fazer commit' })).toBeDisabled()
   await panel.getByRole('button', { name: 'Preparar todas' }).click()
   await expect(panel.getByRole('heading', { name: 'Preparadas (1)' })).toBeVisible()
+  await expect(panel.getByRole('heading', { name: 'Preparadas (1)' }).locator('.section-count')).toHaveText('1')
+  await expect(panel.getByText('Tudo preparado', { exact: true })).toBeVisible()
+  await expect(panel.getByText('1 arquivo no commit', { exact: true })).toBeVisible()
 
   // A model reads what is staged and writes the message.
   await pickModel(page, 'chat-mock')
