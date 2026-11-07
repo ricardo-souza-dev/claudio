@@ -350,6 +350,7 @@ export interface ProjectFile {
 }
 
 export interface Preferences {
+  theme: 'system' | 'light' | 'dark'
   memory: string
   lastModel: ModelRef | null
   permissionMode: PermissionMode

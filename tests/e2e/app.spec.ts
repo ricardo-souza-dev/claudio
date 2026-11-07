@@ -989,6 +989,23 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await send(page, 'Conversa número um')
   await idle(page)
 
+  const sidebar = page.getByRole('complementary', { name: 'Navegação principal' })
+  await expect(sidebar.getByRole('button', { name: 'Nova conversa', exact: true })).toBeVisible()
+  await expect(sidebar.locator('.new-thread kbd')).toHaveText('Ctrl N')
+  await expect(sidebar.locator('.sidebar-section-label')).toHaveText('Projetos')
+  await expect(sidebar.locator('.thread-group-count')).toHaveText('1')
+  await expect(sidebar.locator('.thread-open[aria-current="true"]')).toHaveText('Conversa número um')
+  // Secondary actions remain keyboard-accessible without shifting the row on hover.
+  const addInProject = sidebar.getByRole('button', { name: `Nova conversa em ${path.basename(workspace)}` })
+  await addInProject.focus()
+  await expect(addInProject).toBeFocused()
+  await expect(addInProject).toHaveCSS('opacity', '1')
+  await sidebar.locator('.thread-open').focus()
+  await page.keyboard.press('Tab')
+  const deleteFirst = sidebar.getByRole('button', { name: 'Apagar “Conversa número um”' })
+  await expect(deleteFirst).toBeFocused()
+  await expect(deleteFirst).toHaveCSS('opacity', '1')
+
   // A new conversation stays in the same project, listed under its name.
   await page.keyboard.press('Control+n')
   await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
@@ -997,6 +1014,8 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await expect(page.locator('.thread-item')).toHaveCount(2)
   await expect(page.locator('.thread-group')).toHaveCount(1)
   await expect(page.locator('.thread-group-name')).toHaveText(path.basename(workspace))
+  await expect(sidebar.locator('.thread-group-count')).toHaveText('2')
+  await expect(sidebar.locator('.thread-open[aria-current="true"]')).toHaveText('Conversa número dois')
 
   // A second project gets its own group, and the first one stays one click away.
   const otherProject = await mkdtemp(path.join(tmpdir(), 'uni-e2e-outro-'))
@@ -1047,13 +1066,25 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await send(page, 'Conversa para ver a tela')
   await idle(page)
 
-  await page.emulateMedia({ colorScheme: 'light' })
-  await shot(page, '13-claro')
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await shot(page, '14-escuro')
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expect(sidebar.locator('.thread-item.active')).toHaveCount(1)
+    await expect(sidebar.locator('.sidebar-settings')).toBeInViewport()
+    expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    const selection = await sidebar.locator('.thread-item.active').evaluate((element) => ({
+      background: getComputedStyle(element).backgroundColor,
+      indicator: getComputedStyle(element, '::before').width
+    }))
+    expect(selection.background).not.toBe('rgba(0, 0, 0, 0)')
+    expect(selection.indicator).toBe('2px')
+    await shot(page, colorScheme === 'light' ? '13-claro' : '14-escuro')
+  }
 
   // The smallest window the app allows, with the busiest composer it can show.
   await page.setViewportSize({ width: 760, height: 520 })
+  await expect(sidebar.getByRole('button', { name: 'Nova conversa', exact: true })).toBeInViewport()
+  await expect(sidebar.getByRole('button', { name: 'Ajustes', exact: true })).toBeInViewport()
+  expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'um-nome-de-arquivo-bem-comprido-para-testar.txt', mimeType: 'text/plain', buffer: Buffer.from('x') })
   await shot(page, '15-janela-estreita')
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)

@@ -908,13 +908,14 @@ button:disabled {
 }
 
 .brand {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   height: var(--topbar);
-  padding: 0 14px;
-  font: 500 13px var(--mono);
-  letter-spacing: 0.01em;
+  padding: 0 19px;
+  font: 600 15px var(--sans);
+  letter-spacing: -0.03em;
   -webkit-app-region: drag;
 }
 
@@ -927,16 +928,37 @@ button:disabled {
   flex: none;
 }
 
+.sidebar-actions {
+  flex: none;
+  display: grid;
+  gap: 5px;
+  padding: 12px 12px 16px;
+}
 .new-thread {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 4px 10px 10px;
+  gap: 8px;
+  min-height: 36px;
   padding: 7px 10px;
   border: 1px solid var(--rule-strong);
-  border-radius: 6px;
-  font-size: 13.5px;
+  border-radius: 8px;
+  background: var(--bg);
+  text-align: left;
+  font-size: 12.5px;
   font-weight: 500;
+}
+.new-thread > svg {
+  flex: none;
+  color: var(--thread);
+}
+.new-thread kbd {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: 400 10px/1.5 var(--sans);
+  color: var(--ink-3);
 }
 .new-thread:hover {
   background: var(--bg-hover);
@@ -946,18 +968,34 @@ button:disabled {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 6px 8px;
+  padding: 0 10px 16px;
+  scrollbar-gutter: stable;
 }
-
+.sidebar-section-label {
+  padding: 0 10px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sidebar-project + .sidebar-project {
+  margin-top: 16px;
+}
 .open-project {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: -6px 10px 8px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 13px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 12px;
   color: var(--ink-2);
+}
+.open-project > svg {
+  flex: none;
+  color: var(--ink-3);
 }
 .open-project:hover {
   background: var(--bg-hover);
@@ -967,47 +1005,78 @@ button:disabled {
 .thread-group {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  min-height: 34px;
-  padding: 10px 4px 2px 8px;
-  font: 500 11.5px var(--mono);
+  gap: 7px;
+  min-height: 32px;
+  margin-bottom: 4px;
+  padding: 4px 5px 4px 9px;
+  font: 500 11.5px/1.5 var(--sans);
   color: var(--ink-2);
 }
+.thread-group > svg {
+  flex: none;
+  color: var(--ink-3);
+}
 .thread-group-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.thread-group-add {
-  display: none;
+.thread-group-count {
   flex: none;
-  padding: 2px;
-  border-radius: 4px;
   color: var(--ink-3);
+  font: 400 10px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.thread-group-add {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--ink-3);
+  opacity: 0;
+  pointer-events: none;
 }
 .thread-group-add:hover {
   background: var(--bg-hover);
   color: var(--ink);
 }
 .thread-group:hover .thread-group-add,
-.thread-group-add:focus-visible {
-  display: flex;
+.thread-group:focus-within .thread-group-add {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .thread-item {
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 5px;
+  margin: 2px 0;
+  border-radius: 7px;
+  color: var(--ink-2);
 }
 .thread-item:hover,
 .thread-item:focus-within {
   background: var(--bg-hover);
+  color: var(--ink);
 }
 .thread-item.active {
-  background: var(--bg-hover);
-  box-shadow: inset 2px 0 0 var(--thread);
+  background: var(--thread-soft);
+  color: var(--ink);
+}
+.thread-item.active::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--thread);
 }
 
 .thread-open {
@@ -1016,9 +1085,14 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 8px;
+  min-height: 34px;
+  padding: 7px 6px 7px 14px;
   text-align: left;
-  font-size: 13.5px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.thread-item.active .thread-open {
+  font-weight: 500;
 }
 .thread-title {
   overflow: hidden;
@@ -1027,34 +1101,55 @@ button:disabled {
 }
 
 .thread-delete {
-  display: none;
+  display: inline-flex;
   flex: none;
-  padding: 5px 7px;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  margin-right: 4px;
+  padding: 5px 6px;
+  border-radius: 5px;
   color: var(--ink-3);
+  opacity: 0;
+  pointer-events: none;
 }
 .thread-delete:hover,
 .thread-delete.confirming {
+  background: var(--danger-soft);
   color: var(--danger);
 }
 .thread-delete.confirming {
-  display: block;
-  font-size: 12px;
+  opacity: 1;
+  pointer-events: auto;
+  font-size: 11px;
   font-weight: 500;
 }
 .thread-item:hover .thread-delete,
-.thread-delete:focus-visible {
-  display: block;
+.thread-item:focus-within .thread-delete {
+  opacity: 1;
+  pointer-events: auto;
 }
 
+.sidebar-footer {
+  flex: none;
+  padding: 10px 12px;
+  border-top: 1px solid var(--rule);
+}
 .sidebar-settings {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--rule);
-  font-size: 13.5px;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
   color: var(--ink-2);
   text-align: left;
+}
+.sidebar-settings > svg {
+  flex: none;
+  color: var(--ink-3);
 }
 .sidebar-settings:hover {
   color: var(--ink);

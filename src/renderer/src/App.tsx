@@ -250,24 +250,31 @@ export function App() {
 
   return (
     <div className={`app${showPanel ? ' with-panel' : ''}`}>
-      <aside className="sidebar">
+      <aside className="sidebar" aria-label="Navegação principal">
         <div className="brand">
           <Mark />
           <span>claudio</span>
         </div>
-        <button className="new-thread" onClick={startNew} title="Nova conversa (Ctrl+N)">
-          <Plus size={14} aria-hidden /> Nova conversa
-        </button>
-        <button className="open-project" onClick={openAnotherProject}>
-          <FolderOpen size={14} aria-hidden /> Abrir outro projeto
-        </button>
+        <div className="sidebar-actions">
+          <button className="new-thread" onClick={startNew} title="Nova conversa (Ctrl+N)">
+            <Plus size={15} aria-hidden />
+            <span>Nova conversa</span>
+            <kbd aria-hidden>Ctrl N</kbd>
+          </button>
+          <button className="open-project" onClick={openAnotherProject}>
+            <FolderOpen size={15} aria-hidden /> Abrir outro projeto
+          </button>
+        </div>
         <nav className="thread-list" aria-label="Conversas por projeto">
+          {groups.length > 0 && <div className="sidebar-section-label">Projetos</div>}
           {groups.map((group) => {
             const name = group.workspace ? folderName(group.workspace) : 'Sem projeto'
             return (
-              <div key={group.workspace ?? 'sem-projeto'}>
+              <div className="sidebar-project" key={group.workspace ?? 'sem-projeto'}>
                 <div className="thread-group" title={group.workspace ?? undefined}>
+                  <Folder size={13} aria-hidden />
                   <span className="thread-group-name">{name}</span>
+                  <span className="thread-group-count" aria-label={`${group.threads.length} ${group.threads.length === 1 ? 'conversa' : 'conversas'}`}>{group.threads.length}</span>
                   {group.workspace && (
                     <button className="thread-group-add" aria-label={`Nova conversa em ${name}`} title={`Nova conversa em ${name}`} onClick={() => void store.newThread(model, group.workspace)}>
                       <Plus size={13} />
@@ -276,7 +283,7 @@ export function App() {
                 </div>
                 {group.threads.map((summary) => (
                   <div key={summary.id} className={`thread-item${summary.id === thread.id ? ' active' : ''}`} onMouseLeave={() => setConfirmingDelete(null)}>
-                    <button className="thread-open" onClick={() => void store.openThread(summary.id)} aria-current={summary.id === thread.id}>
+                    <button className="thread-open" title={summary.title} onClick={() => void store.openThread(summary.id)} aria-current={summary.id === thread.id}>
                       {state.running[summary.id] && <span className="node pulse small" aria-hidden />}
                       <span className="thread-title">{summary.title}</span>
                     </button>
@@ -303,9 +310,11 @@ export function App() {
             )
           })}
         </nav>
-        <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}>
-          <SettingsIcon size={14} aria-hidden /> Ajustes
-        </button>
+        <div className="sidebar-footer">
+          <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}>
+            <SettingsIcon size={15} aria-hidden /> Ajustes
+          </button>
+        </div>
       </aside>
 
       <main className="main">
