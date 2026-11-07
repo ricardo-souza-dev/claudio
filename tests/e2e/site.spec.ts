@@ -42,7 +42,9 @@ test('website: release download, mobile layout and unavailable release', async (
     const page = await nextWindow
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
-    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+    page.on('response', (response) => {
+      if (response.url().startsWith(`${url}/`) && response.status() >= 400) errors.push(`Missing site asset: ${response.url()}`)
+    })
     let available = true
     await page.route('https://api.github.com/**', (route) => route.fulfill({ status: available ? 200 : 404, contentType: 'application/json', body: JSON.stringify({ tag_name: 'v0.1.0', assets: [{ name: 'Claudio-Setup-0.1.0-x64.exe', size: 104857600, browser_download_url: 'https://github.com/ricardo-souza-dev/claudio/releases/download/v0.1.0/Claudio-Setup-0.1.0-x64.exe' }] }) }))
     await page.goto(url)
@@ -71,7 +73,11 @@ test('website: release download, mobile layout and unavailable release', async (
     await page.screenshot({ path: 'test-results/site-desktop.png', fullPage: true })
     for (const width of [320, 390, 620, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 })
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `no horizontal overflow at ${width}px`).toBe(true)
+      const layout = await page.evaluate(() => ({
+        fits: document.documentElement.scrollWidth <= window.innerWidth,
+        overflowing: Array.from(document.querySelectorAll('body *')).filter((element) => element.getBoundingClientRect().right > window.innerWidth + 1).map((element) => element.className)
+      }))
+      expect(layout.fits, `no horizontal overflow at ${width}px: ${layout.overflowing.join(', ')}`).toBe(true)
     }
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('tab', { name: '02 Construa o contexto' }).click()
