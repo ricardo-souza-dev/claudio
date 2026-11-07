@@ -761,6 +761,9 @@ test('while working: context, tokens, strength of the model, task list and queue
   })
   expect(cancelledThread?.lastRun).toBe('aborted')
   expect(cancelledThread?.plan?.map((item) => item.status)).toEqual(['in_progress', 'pending'])
+  await page.reload()
+  await expect(page.locator('.plan-status')).toContainText('Execução interrompida.')
+  await expect(page.locator('.plan .spin')).toHaveCount(0)
 
   // Time and tokens count up while the model works.
   await pickModel(page, 'chat-mock')
