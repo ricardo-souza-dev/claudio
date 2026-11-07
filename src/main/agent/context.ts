@@ -23,7 +23,7 @@ export async function buildSystemPrompt(
   const files: string[] = []
   if (workspace) {
     sections.push(
-      `This conversation is about the project in the folder ${workspace}. Paths in tool calls are relative to it. Consider the project as a whole, and read what you need with your tools before answering about its code.`,
+      `This conversation is about the project in the folder ${workspace}. Paths in tool calls are relative to it. Consider the project as a whole, and read what you need with your tools before answering about its code. When you need a decision or a preference from the user, ask with the ask_user tool, which shows options to click, rather than in the text of your reply.`,
       await describeProject(workspace)
     )
     for (const name of INSTRUCTION_FILES) {

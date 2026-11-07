@@ -166,6 +166,31 @@ export interface ApprovalRequest {
   preview: ApprovalPreview
 }
 
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+export interface Question {
+  question: string
+  options: QuestionOption[]
+  /** More than one option can be chosen. */
+  multiple?: boolean
+}
+
+/** Questions a model asks with options to click, instead of in the text of its reply. */
+export interface QuestionRequest {
+  id: string
+  callId: string
+  questions: Question[]
+}
+
+/** One per question, in order: the options chosen and, when written, the person's own words. */
+export interface QuestionAnswer {
+  chosen: string[]
+  other?: string
+}
+
 export type SendRequest = {
   threadId: string
   /** Empty means: run again from the last user message. */
@@ -187,6 +212,8 @@ export type UniEvent =
   | { type: 'reset'; threadId: string }
   | { type: 'approval'; threadId: string; approval: ApprovalRequest }
   | { type: 'approval-done'; threadId: string; id: string }
+  | { type: 'question'; threadId: string; request: QuestionRequest }
+  | { type: 'question-done'; threadId: string; id: string }
   | { type: 'notice'; threadId: string; text: string }
   | { type: 'error'; threadId: string; text: string }
   | { type: 'mcp'; servers: McpStatus[] }
@@ -195,6 +222,8 @@ export type UniEvent =
 export const NEW_THREAD_TITLE = 'Nova conversa'
 /** The task list a model keeps while it works. The interface draws it instead of a tool row. */
 export const PLAN_TOOL = 'update_plan'
+/** Questions with options to click. The interface draws a card, and the answer is the tool's result. */
+export const ASK_TOOL = 'ask_user'
 
 export interface ProviderView {
   id: string
@@ -293,6 +322,7 @@ export type GitAction =
   | { type: 'fetch' }
   | { type: 'pull' }
   | { type: 'push' }
+  | { type: 'sync' }
   | { type: 'init' }
   | { type: 'init-submodules' }
 
@@ -359,6 +389,8 @@ export interface UniApi {
     send(request: SendRequest): Promise<void>
     stop(threadId: string): Promise<void>
     respond(threadId: string, approvalId: string, decision: ApprovalDecision): Promise<void>
+    /** Null means the person skipped the questions. */
+    answer(threadId: string, requestId: string, answers: QuestionAnswer[] | null): Promise<void>
   }
   mcp: {
     list(): Promise<McpStatus[]>

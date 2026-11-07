@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronRight, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
+import { ArrowDown, ArrowDownUp, ArrowUp, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { GitAction, GitFile, GitStatus, ModelRef, PrListing, ProjectFile, ProjectRepos, RepoRef } from '../../shared/types'
 import { folderName, remoteErrorMessage, timeAgo } from './format'
@@ -277,7 +277,51 @@ function PullRequests({ threadId, repo, status, onStatus, onError }: { threadId:
   )
 }
 
-function GitTab({ threadId, repo, status, commitModel, onStatus, onView }: { threadId: string; repo: string; status: GitStatus; commitModel: CommitModel | null; onStatus(status: GitStatus): void; onView(viewing: Viewing): void }) {
+const commitCount = (count: number): string => (count === 1 ? '1 commit' : `${count} commits`)
+
+/** Fetch, bring and send commits in one click. The counts are from the last status read. */
+function SyncButton({ status, busy, disabled = false, onSync }: { status: GitStatus; busy: boolean; disabled?: boolean; onSync(): void }) {
+  const { upstream, ahead, behind } = status
+  const moves = [behind > 0 ? `traz ${commitCount(behind)}` : '', ahead > 0 ? `envia ${commitCount(ahead)}` : ''].filter(Boolean)
+  const label = upstream ? `Sincronizar com ${upstream}${moves.length > 0 ? `: ${moves.join(' e ')}` : ''}` : `Publicar ${status.branch} no remoto`
+  return (
+    <button className="sync-button" aria-label={label} title={label} disabled={busy || disabled} onClick={onSync}>
+      {busy ? <Loader2 size={12} className="spin" aria-hidden /> : upstream ? <ArrowDownUp size={12} aria-hidden /> : <CloudUpload size={12} aria-hidden />}
+      {upstream && behind > 0 && (
+        <span className="sync-count">
+          <ArrowDown size={10} aria-hidden />
+          {behind}
+        </span>
+      )}
+      {upstream && ahead > 0 && (
+        <span className="sync-count">
+          <ArrowUp size={10} aria-hidden />
+          {ahead}
+        </span>
+      )}
+    </button>
+  )
+}
+
+const canSync = (status: GitStatus): boolean => status.hasRemote && status.branch !== null
+
+function GitTab({
+  threadId,
+  repo,
+  status,
+  commitModel,
+  withSync,
+  onStatus,
+  onView
+}: {
+  threadId: string
+  repo: string
+  status: GitStatus
+  commitModel: CommitModel | null
+  withSync: boolean
+  onStatus(status: GitStatus): void
+  onView(viewing: Viewing): void
+}) {
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [message, setMessage] = useState('')
@@ -340,6 +384,7 @@ function GitTab({ threadId, repo, status, commitModel, onStatus, onView }: { thr
             </optgroup>
           )}
         </select>
+        {withSync && canSync(status) && <SyncButton status={status} busy={busy === 'sync'} disabled={busy !== null} onSync={() => void act({ type: 'sync' })} />}
         <button className="icon-button" aria-label="Nova branch" title="Nova branch" onClick={() => setNewBranch(newBranch === null ? '' : null)}>
           <Plus size={13} />
         </button>
@@ -386,7 +431,7 @@ function GitTab({ threadId, repo, status, commitModel, onStatus, onView }: { thr
         </div>
       )}
 
-      {busy && <p className="panel-empty">Executando {busy}…</p>}
+      {busy && <p className="panel-empty">{busy === 'sync' ? 'Sincronizando…' : `Executando ${busy}…`}</p>}
       {problem && (
         <p className="result failed panel-problem" role="alert">
           {problem}
@@ -629,24 +674,46 @@ function RepoBlock({
     return () => clearInterval(timer)
   }, [expanded, threadId, repo.path, report])
 
-  const body = status ? <GitTab threadId={threadId} repo={repo.path} status={status} commitModel={commitModel} onStatus={report} onView={onView} /> : null
+  // Syncing works from the header too, with the repository closed.
+  const [syncing, setSyncing] = useState(false)
+  const [syncProblem, setSyncProblem] = useState<string | null>(null)
+  const sync = async (): Promise<void> => {
+    setSyncing(true)
+    setSyncProblem(null)
+    try {
+      report(await api.project.act(threadId, repo.path, { type: 'sync' }))
+    } catch (error) {
+      setSyncProblem(remoteErrorMessage(error))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const body = status ? <GitTab threadId={threadId} repo={repo.path} status={status} commitModel={commitModel} withSync={alone} onStatus={report} onView={onView} /> : null
   if (alone) return body
 
   const changes = status?.files.length ?? 0
   return (
     <section className={`repo-block${open ? ' open' : ''}`} aria-label={`Repositório ${repo.name}`}>
-      <button className="repo-head" aria-expanded={open} title={`${KIND_LABELS[repo.kind]}: ${repo.path || repo.name}`} onClick={() => setOpen(!open)}>
-        <ChevronRight size={12} className={`chevron${open ? ' rotated' : ''}`} aria-hidden />
-        <FolderGit2 size={13} aria-hidden />
-        <span className="repo-name">{repo.name}</span>
-        {changes > 0 && <span className="panel-count">{changes}</span>}
-        {status && (status.ahead > 0 || status.behind > 0) && (
-          <span className="repo-sync">
-            {status.ahead > 0 && `↑${status.ahead}`} {status.behind > 0 && `↓${status.behind}`}
-          </span>
-        )}
-        <span className="repo-branch">{status?.branch ?? ''}</span>
-      </button>
+      <div className="repo-head">
+        <button className="repo-toggle" aria-expanded={open} title={`${KIND_LABELS[repo.kind]}: ${repo.path || repo.name}`} onClick={() => setOpen(!open)}>
+          <ChevronRight size={12} className={`chevron${open ? ' rotated' : ''}`} aria-hidden />
+          <FolderGit2 size={13} aria-hidden />
+          <span className="repo-name">{repo.name}</span>
+          {changes > 0 && (
+            <span className="panel-count" title={changes === 1 ? '1 arquivo alterado sem commit' : `${changes} arquivos alterados sem commit`}>
+              {changes}
+            </span>
+          )}
+          <span className="repo-branch">{status?.branch ?? ''}</span>
+        </button>
+        {status && canSync(status) && <SyncButton status={status} busy={syncing} onSync={() => void sync()} />}
+      </div>
+      {syncProblem && (
+        <p className="result failed panel-problem" role="alert">
+          {syncProblem}
+        </p>
+      )}
       {open && <div className="repo-body">{body}</div>}
     </section>
   )

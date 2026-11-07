@@ -282,42 +282,68 @@ button:disabled {
 .repo-head {
   display: flex;
   align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.repo-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
   gap: 6px;
-  width: 100%;
   min-width: 0;
   padding: 6px 4px;
   border-radius: 4px;
   text-align: left;
   font-size: 13px;
 }
-.repo-head:hover {
+.repo-toggle:hover {
   background: var(--bg-hover);
 }
-.repo-head > svg {
+.repo-toggle > svg {
   flex: none;
   color: var(--ink-3);
 }
 .repo-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-weight: 500;
 }
-.repo-sync {
+.repo-toggle .panel-count {
   flex: none;
-  font: 400 11px var(--mono);
-  color: var(--ink-3);
 }
 .repo-branch {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 45%;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  text-align: right;
   font: 400 11px var(--mono);
   color: var(--ink-3);
+}
+.sync-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 5px;
+  border-radius: 4px;
+  font: 400 11px var(--mono);
+  color: var(--ink-2);
+}
+.sync-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.sync-button:disabled {
+  opacity: 0.6;
+}
+.sync-count {
+  display: inline-flex;
+  align-items: center;
 }
 .repo-body {
   padding: 2px 0 12px 8px;

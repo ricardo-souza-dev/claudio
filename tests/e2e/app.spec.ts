@@ -473,6 +473,8 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(panel.getByLabel('Branch', { exact: true })).toHaveValue('principal')
   await expect(panel.getByText('Nada alterado.')).toBeVisible()
   await expect(panel.getByText('Primeiro commit')).toBeVisible()
+  // With a remote but no upstream yet, the branch can be published in one click.
+  await expect(panel.getByRole('button', { name: 'Publicar principal no remoto' })).toBeVisible()
 
   // Pull requests come from the GitHub CLI.
   await expect(panel.getByText('Corrige o login')).toBeVisible()
@@ -590,6 +592,11 @@ test('a project with several repositories: each one with its own branch and comm
   const web = path.join(workspace, 'web')
   await seed(api, 'principal-api')
   await seed(web, 'principal-web')
+  // Only web has a remote, as a clone would.
+  const webRemote = await mkdtemp(path.join(tmpdir(), 'uni-e2e-remoto-web-'))
+  execFileSync('git', ['init', '-q', '--bare', webRemote])
+  inRepo(web, 'remote', 'add', 'origin', webRemote)
+  inRepo(web, 'push', '-q', '-u', 'origin', 'principal-web')
 
   const { app, page, problems } = await launch()
   await openProject(app, page)
@@ -608,7 +615,7 @@ test('a project with several repositories: each one with its own branch and comm
   await expect(panel.getByRole('tab', { name: /Git/ })).toContainText('1')
 
   // Its commit stays in that repository.
-  await webBlock.locator('.repo-head').click()
+  await webBlock.locator('.repo-toggle').click()
   await webBlock.getByRole('button', { name: 'Preparar todas' }).click()
   await webBlock.getByLabel('Texto do commit').fill('Muda o web')
   await webBlock.getByRole('button', { name: 'Fazer commit' }).click()
@@ -616,6 +623,30 @@ test('a project with several repositories: each one with its own branch and comm
   expect(inRepo(web, 'log', '-1', '--format=%s')).toBe('Muda o web')
   expect(inRepo(api, 'log', '-1', '--format=%s')).toBe('Início de principal-api')
   await shot(page, '28-varios-repositorios')
+
+  // Next to the branch, one click syncs. Here it sends the new commit.
+  await expect(apiBlock.locator('.sync-button')).toHaveCount(0)
+  const syncWeb = webBlock.getByRole('button', { name: /^Sincronizar com origin\/principal-web/ })
+  await expect(syncWeb).toHaveAccessibleName('Sincronizar com origin/principal-web: envia 1 commit')
+  await shot(page, '34-sincronizar')
+  await syncWeb.click()
+  await expect(syncWeb).toHaveAccessibleName('Sincronizar com origin/principal-web')
+  expect(inRepo(webRemote, 'log', '-1', '--format=%s', 'principal-web')).toBe('Muda o web')
+
+  // And brings what someone else pushed.
+  const colleague = await mkdtemp(path.join(tmpdir(), 'uni-e2e-colega-'))
+  execFileSync('git', ['clone', '-q', '-b', 'principal-web', webRemote, colleague], { stdio: 'ignore' })
+  inRepo(colleague, 'config', 'user.name', 'Colega')
+  inRepo(colleague, 'config', 'user.email', 'colega@example.com')
+  inRepo(colleague, 'config', 'commit.gpgsign', 'false')
+  await writeFile(path.join(colleague, 'colega.txt'), 'oi\n')
+  inRepo(colleague, 'add', '.')
+  inRepo(colleague, 'commit', '-q', '-m', 'Do colega')
+  inRepo(colleague, 'push', '-q')
+  await syncWeb.click()
+  await expect(webBlock.locator('.commit-subject').first()).toHaveText('Do colega')
+  await rm(colleague, { recursive: true, force: true }).catch(() => undefined)
+  await rm(webRemote, { recursive: true, force: true }).catch(() => undefined)
 
   // The file tree covers them all.
   await panel.getByRole('tab', { name: 'Arquivos' }).click()
@@ -680,8 +711,8 @@ test('while working: context, tokens, strength of the model, task list and queue
   await page.locator('.meter-button').click()
   const panel = page.locator('.meter-panel')
   await expect(panel).toContainText('Contexto em uso')
-  await expect(panel).toContainText('de 200 mil')
-  await expect(panel).toContainText('32 mil tokens')
+  await expect(panel).toContainText('de 200mil')
+  await expect(panel).toContainText('32mil tokens')
   await expect(panel).toContainText('Extra')
   await expect(panel).toContainText('US$')
   await shot(page, '20-uso-da-conversa')
@@ -701,7 +732,7 @@ test('while working: context, tokens, strength of the model, task list and queue
   await expect(page.locator('.plan')).toHaveCount(0)
   await expect(page.locator('.run-status')).toContainText('Escrevendo', { timeout: 15_000 })
   await expect(page.locator('.run-status')).toContainText('tokens')
-  await expect(page.locator('.run-status')).toContainText(/\d+ s/)
+  await expect(page.locator('.run-status')).toContainText(/\d+s/)
 
   // A message written meanwhile waits its turn.
   const box = page.getByLabel('Mensagem', { exact: true })
@@ -871,7 +902,7 @@ test('choosing a model: recommendation for the moment, with cost, strength and m
   const claude = dialog.locator('.picker-row:not(.picker-recommended)', { hasText: 'Claude Simulado' })
   await expect(claude).toContainText('até Máxima')
   await expect(claude).toContainText('~US$')
-  await expect(claude).toContainText('200 mil')
+  await expect(claude).toContainText('200mil')
   await page.keyboard.press('Escape')
 
   await page.getByLabel('Mensagem', { exact: true }).fill('oi')
@@ -887,7 +918,7 @@ test('choosing a model: recommendation for the moment, with cost, strength and m
   await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[openai-chat]', { timeout: 15_000 })
   await idle(page)
   await page.keyboard.press('Control+k')
-  await expect(row.locator('.picker-figure').nth(2)).toHaveText(/^~\d+ s$/, { timeout: 10_000 })
+  await expect(row.locator('.picker-figure').nth(2)).toHaveText(/^~\d+s$/, { timeout: 10_000 })
   await page.keyboard.press('Escape')
 
   // A model that can't read images says so when there is one to send.

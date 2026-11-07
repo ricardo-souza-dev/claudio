@@ -11,6 +11,9 @@ import {
   type Part,
   type PermissionMode,
   type PlanItem,
+  type Question,
+  type QuestionAnswer,
+  type QuestionRequest,
   type SendRequest,
   type Thread,
   type ToolCallPart,
@@ -19,7 +22,7 @@ import {
 } from '../../shared/types'
 import { flattenHistory, newId, toolCallsOf } from '../providers/history'
 import { AbortedError, ProviderError, type ProviderAdapter } from '../providers/types'
-import { permissionFor, PLAN_TOOL, type Tool } from '../tools/types'
+import { ASK_TOOL, permissionFor, PLAN_TOOL, type Tool } from '../tools/types'
 import { buildSystemPrompt } from './context'
 
 const MAX_AGENT_STEPS = 40
@@ -32,6 +35,8 @@ export interface RunnerDeps {
   emit(event: UniEvent): void
   save(thread: Thread): Promise<void>
   requestApproval(threadId: string, request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision>
+  /** Shows the questions and waits. Null when the person skips them or the run stops. */
+  askUser?(threadId: string, request: QuestionRequest, signal: AbortSignal): Promise<QuestionAnswer[] | null>
   saveAttachments?(attachments: OutgoingAttachment[]): Promise<AttachmentPart[]>
   loadAttachments?(messages: Message[], model: ModelInfo): Promise<Message[]>
   /** Called after each answer, so time estimates come from how this model really performs here. */
@@ -66,6 +71,21 @@ function inputProblem(tool: Tool, input: unknown): string | null {
   }
   if (!validate || validate(input)) return null
   return validator.errorsText(validate.errors, { dataVar: 'input' })
+}
+
+const MAX_OWN_WORDS = 2000
+
+/** The answers as plain text, which every model reads the same way. */
+export function describeAnswers(questions: Question[], answers: QuestionAnswer[]): string {
+  return questions
+    .map((question, index) => {
+      const answer = answers[index]
+      const parts = (answer?.chosen ?? []).map(String)
+      const own = answer?.other?.trim().slice(0, MAX_OWN_WORDS)
+      if (own) parts.push(`nas palavras do usuário: ${own}`)
+      return `${question.question}\nResposta: ${parts.length > 0 ? parts.join('; ') : 'sem resposta'}`
+    })
+    .join('\n\n')
 }
 
 function sameModelId(requested: string, served: string): boolean {
@@ -321,6 +341,8 @@ export class Runner {
     const checked = this.checkCall(call, tools)
     if ('error' in checked) return this.errorResult(call, checked.error)
     const { tool, input } = checked
+    // Asking is itself waiting for the person, so it needs no permission, in any mode.
+    if (tool.name === ASK_TOOL && this.deps.askUser) return this.ask(thread.id, call, (input as { questions: Question[] }).questions, signal)
 
     const risk = tool.risk(input)
     const permission = permissionFor(risk, mode, thread.allowedTools.includes(tool.name))
@@ -347,6 +369,13 @@ export class Runner {
     const problem = inputProblem(tool, input)
     if (problem) return { error: `Argumentos inválidos: ${problem}` }
     return { tool, input }
+  }
+
+  private async ask(threadId: string, call: ToolCallPart, questions: Question[], signal: AbortSignal): Promise<ToolResultPart> {
+    const answers = await this.deps.askUser!(threadId, { id: newId('q_'), callId: call.id, questions }, signal)
+    if (signal.aborted) return this.errorResult(call, 'Cancelado pelo usuário.')
+    const content = answers ? describeAnswers(questions, answers) : 'O usuário pulou estas perguntas. Siga com o que fizer mais sentido e diga o que escolheu, ou pergunte de outro jeito.'
+    return { type: 'tool_result', callId: call.id, name: call.name, content }
   }
 
   private async run(tool: Tool, call: ToolCallPart, input: Record<string, unknown>, signal: AbortSignal): Promise<ToolResultPart> {

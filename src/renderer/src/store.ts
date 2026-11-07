@@ -6,6 +6,7 @@ import {
   type ModelRef,
   type Preferences,
   type ProviderView,
+  type QuestionRequest,
   type SendRequest,
   type Thread,
   type ThreadSummary,
@@ -47,6 +48,7 @@ export interface AppState {
   running: Record<string, boolean>
   live: Record<string, LiveTurn>
   approvals: Record<string, ApprovalRequest[]>
+  questions: Record<string, QuestionRequest[]>
   notices: Record<string, string[]>
   errors: Record<string, string | undefined>
 }
@@ -64,6 +66,7 @@ const INITIAL: AppState = {
   running: {},
   live: {},
   approvals: {},
+  questions: {},
   notices: {},
   errors: {}
 }
@@ -114,8 +117,13 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
           : state.live,
         notices: event.running ? { ...state.notices, [event.threadId]: [] } : state.notices,
         errors: event.running ? { ...state.errors, [event.threadId]: undefined } : state.errors,
-        approvals: event.running ? state.approvals : { ...state.approvals, [event.threadId]: [] }
+        approvals: event.running ? state.approvals : { ...state.approvals, [event.threadId]: [] },
+        questions: event.running ? state.questions : { ...state.questions, [event.threadId]: [] }
       }
+    case 'question':
+      return { ...state, questions: { ...state.questions, [event.threadId]: [...(state.questions[event.threadId] ?? []), event.request] } }
+    case 'question-done':
+      return { ...state, questions: { ...state.questions, [event.threadId]: (state.questions[event.threadId] ?? []).filter((entry) => entry.id !== event.id) } }
     case 'reset':
       return withLive(state, event.threadId, { ...liveOf(state, event.threadId), ...EMPTY_STREAM })
     case 'approval':

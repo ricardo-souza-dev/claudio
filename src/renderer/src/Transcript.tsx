@@ -10,6 +10,8 @@ import {
   type ModelInfo,
   type ModelRef,
   type Part,
+  type QuestionAnswer,
+  type QuestionRequest,
   type Thread,
   type ToolCallPart,
   type ToolResultPart
@@ -24,6 +26,7 @@ interface TranscriptProps {
   live: LiveTurn | undefined
   running: boolean
   approvals: ApprovalRequest[]
+  questions: QuestionRequest[]
   notices: string[]
   error: string | undefined
   onRetry(): void
@@ -121,16 +124,70 @@ function ApprovalCard({ threadId, approval }: { threadId: string; approval: Appr
   )
 }
 
+/** Options to click. Takes no focus, like approvals: an Enter meant for the message box answers nothing. */
+function QuestionCard({ threadId, request }: { threadId: string; request: QuestionRequest }) {
+  const [chosen, setChosen] = useState<string[][]>(() => request.questions.map(() => []))
+  const [own, setOwn] = useState<string[]>(() => request.questions.map(() => ''))
+  const instant = request.questions.length === 1 && !request.questions[0].multiple
+  const send = (answers: QuestionAnswer[] | null) => void api.chat.answer(threadId, request.id, answers)
+  const answers = (picked = chosen): QuestionAnswer[] => picked.map((labels, index) => ({ chosen: labels, ...(own[index].trim() ? { other: own[index].trim() } : {}) }))
+  const complete = request.questions.every((_, index) => chosen[index].length > 0 || own[index].trim())
+  const pick = (index: number, label: string, multiple: boolean): void => {
+    if (instant) return send(answers([[label]]))
+    setChosen((all) => all.map((labels, i) => (i !== index ? labels : multiple ? (labels.includes(label) ? labels.filter((l) => l !== label) : [...labels, label]) : [label])))
+  }
+  return (
+    <div className="approval question-card" role="group" aria-label="Perguntas do modelo">
+      {request.questions.map((question, index) => (
+        <div key={index} className="question">
+          <div className="approval-title">{question.question}</div>
+          <div className="approval-actions">
+            {question.options.map((option) => (
+              <button
+                key={option.label}
+                className={`button${chosen[index].includes(option.label) ? ' primary' : ''}`}
+                aria-pressed={instant ? undefined : chosen[index].includes(option.label)}
+                title={option.description}
+                onClick={() => pick(index, option.label, question.multiple === true)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <input
+            className="panel-input"
+            aria-label={`Outra resposta: ${question.question}`}
+            placeholder="Outra resposta"
+            value={own[index]}
+            onChange={(event) => setOwn((all) => all.map((text, i) => (i === index ? event.target.value : text)))}
+            onKeyDown={(event) => event.key === 'Enter' && complete && send(answers())}
+          />
+        </div>
+      ))}
+      <div className="approval-actions">
+        <button className="button primary" disabled={!complete} onClick={() => send(answers())}>
+          Responder
+        </button>
+        <button className="button quiet" onClick={() => send(null)}>
+          Pular
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ToolRow({
   call,
   result,
   approval,
+  question,
   threadId,
   interrupted
 }: {
   call: ToolCallPart
   result: ToolResultPart | undefined
   approval: ApprovalRequest | undefined
+  question?: QuestionRequest
   threadId: string
   interrupted: boolean
 }) {
@@ -144,7 +201,7 @@ function ToolRow({
         : 'ok'
     : interrupted
       ? 'error'
-      : approval
+      : approval || question
         ? 'waiting'
         : 'running'
   const statusText = { ok: '', denied: 'não permitido', error: 'erro', waiting: 'aguardando você', running: 'executando' }[status]
@@ -157,6 +214,7 @@ function ToolRow({
         {statusText && <span className="tool-status">{statusText}</span>}
       </button>
       {approval && <ApprovalCard threadId={threadId} approval={approval} />}
+      {question && <QuestionCard threadId={threadId} request={question} />}
       {open && (
         <div className="tool-detail">
           <pre>{JSON.stringify(call.input, null, 2)}</pre>
@@ -174,6 +232,7 @@ interface AssistantProps {
   models: ModelInfo[]
   results: Map<string, ToolResultPart>
   approvals: ApprovalRequest[]
+  questions: QuestionRequest[]
   threadId: string
   running: boolean
 }
@@ -193,6 +252,7 @@ function renderPart(part: Part, index: number, props: AssistantProps) {
           call={part}
           result={props.results.get(part.id)}
           approval={props.approvals.find((entry) => entry.callId === part.id)}
+          question={props.questions.find((entry) => entry.callId === part.id)}
           threadId={props.threadId}
           interrupted={!props.running}
         />
@@ -228,6 +288,7 @@ const AssistantMessage = memo(function AssistantMessage(props: AssistantProps) {
 })
 
 const NO_APPROVALS: ApprovalRequest[] = []
+const NO_QUESTIONS: QuestionRequest[] = []
 
 /**
  * Results for each assistant message, taken from the tool message right after it.
@@ -247,7 +308,7 @@ function resultsByMessage(messages: Message[]): Map<string, Map<string, ToolResu
 
 const NO_RESULTS = new Map<string, ToolResultPart>()
 
-export function Transcript({ thread, models, live, running, approvals, notices, error, onRetry, onChangeModel }: TranscriptProps) {
+export function Transcript({ thread, models, live, running, approvals, questions, notices, error, onRetry, onChangeModel }: TranscriptProps) {
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
   const results = useMemo(() => resultsByMessage(thread.messages), [thread.messages])
@@ -307,6 +368,7 @@ export function Transcript({ thread, models, live, running, approvals, notices, 
         models={models}
         results={results.get(message.id) ?? NO_RESULTS}
         approvals={message === latestAssistant ? approvals : NO_APPROVALS}
+        questions={message === latestAssistant ? questions : NO_QUESTIONS}
         threadId={thread.id}
         running={running}
       />

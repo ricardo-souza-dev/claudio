@@ -236,6 +236,54 @@ describe('remoto', () => {
     expect((await service.status()).commits[0].subject).toBe('Segundo')
   })
 
+  it('syncs in one click: publishes, brings, sends, and stops when both sides moved', async () => {
+    await addRemote()
+    // Without an upstream yet, syncing publishes the branch.
+    await service.act({ type: 'sync' })
+    expect((await service.status()).upstream).toBe('origin/principal')
+    const remoteSubject = () => execFileSync('git', ['-C', remoteRoot!, 'log', '-1', '--format=%s', 'principal'], { encoding: 'utf8' }).trim()
+
+    const colleague = await mkdtemp(path.join(tmpdir(), 'uni-git-colega-'))
+    const inColleague = (...args: string[]) => execFileSync('git', ['-C', colleague, ...args], { stdio: 'ignore' })
+    const colleaguePushes = async (subject: string): Promise<void> => {
+      await writeFile(path.join(colleague, `${subject}.txt`), subject)
+      inColleague('add', '.')
+      inColleague('commit', '-q', '-m', subject)
+      inColleague('push', '-q')
+    }
+    const commitHere = async (content: string, subject: string): Promise<void> => {
+      await writeFile(path.join(root, 'README.md'), content)
+      await service.act({ type: 'stage', paths: ['README.md'] })
+      await service.act({ type: 'commit', message: subject })
+    }
+    try {
+      execFileSync('git', ['clone', '-q', '-b', 'principal', remoteRoot!, colleague], { stdio: 'ignore' })
+      inColleague('config', 'user.name', 'Colega')
+      inColleague('config', 'user.email', 'colega@example.com')
+      inColleague('config', 'commit.gpgsign', 'false')
+
+      // What someone else pushed comes in, with no fetch beforehand.
+      await colleaguePushes('Do colega')
+      await service.act({ type: 'sync' })
+      expect((await service.status()).commits[0].subject).toBe('Do colega')
+
+      // What was committed here goes out.
+      await commitHere('dois\n', 'Daqui')
+      await service.act({ type: 'sync' })
+      expect(remoteSubject()).toBe('Daqui')
+
+      // Both sides moved: nothing is merged, rebased or forced.
+      inColleague('pull', '-q', '--ff-only')
+      await colleaguePushes('Outro do colega')
+      await commitHere('três\n', 'Outro daqui')
+      await expect(service.act({ type: 'sync' })).rejects.toThrow('divergiram')
+      expect((await service.status()).commits[0].subject).toBe('Outro daqui')
+      expect(remoteSubject()).toBe('Outro do colega')
+    } finally {
+      await rm(colleague, { recursive: true, force: true }).catch(() => undefined)
+    }
+  })
+
   it('never forces a push over remote history', async () => {
     await addRemote()
     await service.act({ type: 'push' })
@@ -352,6 +400,29 @@ describe('vários repositórios', () => {
     await service.act({ type: 'stage', paths: ['libs/sub'] })
     await service.act({ type: 'commit', message: 'Atualiza o submódulo' })
     expect((await service.status()).files).toEqual([])
+  })
+
+  it('keeps the parent and its other repositories working when a submodule is broken', async () => {
+    await commitBase()
+    addSubmodule(await makeSource('sub'), 'libs/sub')
+    addSubmodule(await makeSource('boa'), 'libs/boa')
+    git('commit', '-q', '-m', 'Adiciona submódulos')
+    const inner = path.join(root, 'libs', 'sub')
+    // HEAD points to a commit the submodule doesn't have, as after an interrupted clone.
+    const gitDir = execFileSync('git', ['-C', inner, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8' }).trim()
+    await writeFile(path.join(gitDir, 'HEAD'), `${'1'.repeat(40)}\n`)
+    await writeFile(path.join(root, 'README.md'), 'dois\n')
+    await writeFile(path.join(root, 'libs', 'boa', 'lib.txt'), 'alterada\n')
+
+    const status = await service.status()
+    expect(status.files.map((file) => file.path)).toEqual(expect.arrayContaining(['README.md', 'libs/sub']))
+    await service.act({ type: 'discard', paths: ['README.md'] })
+    expect((await service.status()).files.map((file) => file.path)).not.toContain('README.md')
+
+    // Every submodule still gets its own block, and only the broken one shows an error.
+    expect((await discoverRepositories(root)).repos.map((repo) => repo.path)).toEqual(['', 'libs/boa', 'libs/sub'])
+    expect((await new GitService(path.join(root, 'libs', 'boa'), FAKE_GH).status()).files[0]).toMatchObject({ path: 'lib.txt', worktree: 'M' })
+    await expect(new GitService(inner, FAKE_GH).status()).rejects.toThrow()
   })
 
   it('lists files from submodules and clones without a stray folder entry', async () => {

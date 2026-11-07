@@ -1,7 +1,7 @@
 import type { ApprovalPreview, PermissionMode, Risk } from '../../shared/types'
 import type { ToolSpec } from '../providers/types'
 
-export { PLAN_TOOL } from '../../shared/types'
+export { ASK_TOOL, PLAN_TOOL } from '../../shared/types'
 
 export interface ToolResult {
   content: string

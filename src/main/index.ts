@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
-import type { ApprovalDecision, ApprovalRequest, GitAction, ModelRef, Protocol, SendRequest, UniEvent } from '../shared/types'
+import type { ApprovalDecision, ApprovalRequest, GitAction, ModelRef, Protocol, QuestionAnswer, QuestionRequest, SendRequest, UniEvent } from '../shared/types'
 import { Runner } from './agent/runner'
 import { AttachmentStore } from './attachments'
 import { generateCommitMessage } from './commit-message'
@@ -99,6 +99,7 @@ async function start(): Promise<void> {
   for (const server of settings.mcpServers()) mcp.connect(server)
 
   const pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>()
+  const pendingQuestions = new Map<string, (answers: QuestionAnswer[] | null) => void>()
 
   const toolsFor = (workspace: string | null) => [...(workspace ? workspaceTools(workspace) : []), ...mcp.tools()]
 
@@ -123,6 +124,19 @@ async function start(): Promise<void> {
         signal.addEventListener('abort', onAbort, { once: true })
         pendingApprovals.set(request.id, finish)
         emit({ type: 'approval', threadId, approval: request })
+      }),
+    askUser: (threadId: string, request: QuestionRequest, signal: AbortSignal) =>
+      new Promise<QuestionAnswer[] | null>((resolve) => {
+        const finish = (answers: QuestionAnswer[] | null): void => {
+          pendingQuestions.delete(request.id)
+          signal.removeEventListener('abort', onAbort)
+          emit({ type: 'question-done', threadId, id: request.id })
+          resolve(answers)
+        }
+        const onAbort = (): void => finish(null)
+        signal.addEventListener('abort', onAbort, { once: true })
+        pendingQuestions.set(request.id, finish)
+        emit({ type: 'question', threadId, request })
       })
   })
 
@@ -198,6 +212,16 @@ async function start(): Promise<void> {
   handle('chat.stop', (threadId: string) => runner.stop(threadId))
   handle('chat.respond', (_threadId: string, approvalId: string, decision: ApprovalDecision) => {
     pendingApprovals.get(approvalId)?.(decision)
+  })
+  handle('chat.answer', (_threadId: string, requestId: string, answers: unknown) => {
+    // Only lists of words go back to the model, whatever the page sends.
+    const clean = Array.isArray(answers)
+      ? answers.map((answer: { chosen?: unknown; other?: unknown } | null) => ({
+          chosen: Array.isArray(answer?.chosen) ? answer.chosen.map(String) : [],
+          ...(typeof answer?.other === 'string' ? { other: answer.other } : {})
+        }))
+      : null
+    pendingQuestions.get(requestId)?.(clean)
   })
 
   // Each request names a conversation, and the project folder comes from it, not from the page.

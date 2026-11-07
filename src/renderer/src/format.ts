@@ -15,8 +15,8 @@ export function formatEstimatedUsd(amount: number): string {
 }
 
 export function formatEstimatedSeconds(seconds: number): string {
-  if (seconds < 60) return `~${Math.max(1, Math.round(seconds))} s`
-  return `~${Math.round(seconds / 60)} min`
+  if (seconds < 60) return `~${Math.max(1, Math.round(seconds))}s`
+  return `~${Math.round(seconds / 60)}min`
 }
 
 export function formatFileSize(bytes: number): string {
@@ -38,14 +38,15 @@ export function timeAgo(epochSeconds: number): string {
 
 export function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000))
-  if (seconds < 60) return `${seconds} s`
+  if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} min ${seconds % 60} s`
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
+  if (minutes < 60) return `${minutes}min ${seconds % 60}s`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}min`
 }
 
+/** Number and unit stay together ("2,5mil"), so a row of figures reads as pairs. */
 export function formatTokens(count: number): string {
-  return compact.format(count)
+  return compact.format(count).replace(/\s/g, '')
 }
 
 export function usageLabel(usage: Usage | undefined): string | null {

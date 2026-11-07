@@ -362,6 +362,7 @@ export function App() {
             live={state.live[thread.id]}
             running={running}
             approvals={state.approvals[thread.id] ?? []}
+            questions={state.questions[thread.id] ?? []}
             notices={state.notices[thread.id] ?? []}
             error={state.errors[thread.id]}
             onRetry={() => send('')}

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ApprovalPreview } from '../../shared/types'
-import { PLAN_TOOL, type Tool, type ToolResult } from './types'
+import { ASK_TOOL, PLAN_TOOL, type Tool, type ToolResult } from './types'
 
 const MAX_READ_LINES = 2000
 const MAX_OUTPUT_CHARS = 100_000
@@ -198,6 +198,47 @@ export function workspaceTools(root: string): Tool[] {
       risk: () => 'read',
       preview: (input) => ({ kind: 'json', json: JSON.stringify(input, null, 2) }),
       run: async () => ({ content: 'Lista atualizada.' })
+    },
+    {
+      name: ASK_TOOL,
+      description:
+        'Ask the user one to four questions, each with two to four options to click, and wait for the answers. Whenever you need a decision or a preference from the user, use this instead of asking in the text of your reply: choosing is faster than typing. Put the option you recommend first and say so in its label, in the language of the conversation. The user can also answer in their own words, or skip.',
+      schema: {
+        type: 'object',
+        properties: {
+          questions: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 4,
+            items: {
+              type: 'object',
+              properties: {
+                question: { type: 'string', description: 'The complete question, in the language of the conversation.' },
+                options: {
+                  type: 'array',
+                  minItems: 2,
+                  maxItems: 4,
+                  items: {
+                    type: 'object',
+                    properties: {
+                      label: { type: 'string', description: 'The choice, in one to five words.' },
+                      description: { type: 'string', description: 'What choosing it means, in one short sentence.' }
+                    },
+                    required: ['label']
+                  }
+                },
+                multiple: { type: 'boolean', description: 'True when more than one option can be chosen.' }
+              },
+              required: ['question', 'options']
+            }
+          }
+        },
+        required: ['questions']
+      },
+      risk: () => 'read',
+      preview: (input) => ({ kind: 'json', json: JSON.stringify(input, null, 2) }),
+      // The run loop shows the questions and waits. This only answers where nobody can.
+      run: async () => ({ content: 'Não há como mostrar perguntas agora. Pergunte no texto da resposta.', isError: true })
     },
     {
       name: 'read_file',

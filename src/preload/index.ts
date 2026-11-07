@@ -27,7 +27,7 @@ const api: UniApi = {
     setWorkspace: call('threads.setWorkspace'),
     setModel: call('threads.setModel')
   },
-  chat: { send: call('chat.send'), stop: call('chat.stop'), respond: call('chat.respond') },
+  chat: { send: call('chat.send'), stop: call('chat.stop'), respond: call('chat.respond'), answer: call('chat.answer') },
   mcp: { list: call('mcp.list'), add: call('mcp.add'), remove: call('mcp.remove'), reconnect: call('mcp.reconnect') },
   attachments: { preview: call('attachments.preview') },
   project: {

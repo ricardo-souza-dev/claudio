@@ -163,12 +163,22 @@ export class GitService {
     return remotes.includes('origin') ? 'origin' : (remotes[0] ?? null)
   }
 
+  /**
+   * Git enters each submodule to tell whether it has changes of its own, and one it can't read,
+   * such as a submodule whose HEAD is missing, fails the whole status. Then submodules are
+   * compared by commit only: each one has its own block in the panel, where its error shows.
+   */
+  private async porcelain(extra: string[] = []): Promise<string> {
+    const args = ['status', '--porcelain=v2', '--branch', '-z', ...extra]
+    return this.git(args).catch(() => this.git([...args, '--ignore-submodules=dirty']))
+  }
+
   async status(): Promise<GitStatus> {
     if (!(await this.isRepo())) {
       return { isRepo: false, branch: null, upstream: null, ahead: 0, behind: 0, hasRemote: false, files: [], branches: [], commits: [] }
     }
     const [statusOutput, branches, commits, remote] = await Promise.all([
-      this.git(['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all']),
+      this.porcelain(['--untracked-files=all']),
       this.branches(),
       this.commits(),
       this.remoteName()
@@ -286,7 +296,30 @@ export class GitService {
       case 'push':
         await this.push()
         return
+      case 'sync':
+        await this.sync()
+        return
     }
+  }
+
+  /**
+   * One click to be even with the remote: fetch, bring new commits by fast-forward, then send
+   * local ones. When both sides have new commits it stops and says so, because choosing between
+   * merge and rebase belongs to the person.
+   */
+  private async sync(): Promise<void> {
+    if (!parseStatus(await this.porcelain()).upstream) {
+      await this.push()
+      return
+    }
+    await this.git(['fetch', '--prune'], { timeout: NETWORK_TIMEOUT_MS })
+    const { upstream, ahead, behind } = parseStatus(await this.porcelain())
+    const commits = (count: number): string => (count === 1 ? '1 commit' : `${count} commits`)
+    if (ahead > 0 && behind > 0) {
+      throw new Error(`Esta branch e ${upstream} divergiram: há ${commits(behind)} novo no remoto e ${commits(ahead)} aqui. Escolha entre merge e rebase no terminal e sincronize de novo.`)
+    }
+    if (behind > 0) await this.git(['pull', '--ff-only'], { timeout: NETWORK_TIMEOUT_MS })
+    if (ahead > 0) await this.git(['push'], { timeout: NETWORK_TIMEOUT_MS })
   }
 
   private async validateBranchName(name: string): Promise<void> {
@@ -296,7 +329,7 @@ export class GitService {
   }
 
   private async discard(paths: string[]): Promise<void> {
-    const files = parseStatus(await this.git(['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'])).files
+    const files = parseStatus(await this.porcelain(['--untracked-files=all'])).files
     for (const file of paths) {
       const entry = files.find((candidate) => candidate.path === file)
       if (!entry) continue
@@ -308,7 +341,7 @@ export class GitService {
 
   /** Never forced: rewriting remote history is something to do on purpose, in a terminal. */
   private async push(): Promise<void> {
-    const { upstream } = parseStatus(await this.git(['status', '--porcelain=v2', '--branch', '-z']))
+    const { upstream } = parseStatus(await this.porcelain())
     if (upstream) {
       await this.git(['push'], { timeout: NETWORK_TIMEOUT_MS })
       return
