@@ -204,7 +204,16 @@ export type SendRequest = {
   model: ModelRef
 }
 
+export interface UpdateStatus {
+  state: 'unavailable' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+  currentVersion: string
+  version?: string
+  percent?: number
+  message?: string
+}
+
 export type UniEvent =
+  | { type: 'update'; status: UpdateStatus }
   | { type: 'thread'; thread: Thread }
   | { type: 'threads'; threads: ThreadSummary[] }
   | { type: 'run'; threadId: string; running: boolean }

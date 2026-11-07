@@ -85,6 +85,9 @@ export function App() {
   const store = useAppStore()
   const { state } = store
   const { thread, listing, prefs } = state
+  useEffect(() => {
+    document.documentElement.dataset.theme = prefs.theme
+  }, [prefs.theme])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toolCount, setToolCount] = useState(0)
