@@ -388,10 +388,10 @@ describe('interrupções e falhas', () => {
     expect(thread.lastRun).toBe('completed')
   })
 
-  it('marks cancellation during a running command and leaves no active execution', async () => {
+  it.each([200, 1500])('marks cancellation of a command after %i ms and leaves no active execution', async (delay) => {
     const h = harness('allow')
     const thread = newThread()
-    h.onApproval = () => { setTimeout(() => h.runner.stop(thread.id), 200) }
+    h.onApproval = () => { setTimeout(() => h.runner.stop(thread.id), delay) }
     await h.runner.send(thread, agent(thread, 'ferramenta: run_command {"command":"node -e \\\"setTimeout(() => {}, 60000)\\\""}', CLAUDE))
     expect(thread.lastRun).toBe('aborted')
     expect(h.runner.hasActiveRuns).toBe(false)

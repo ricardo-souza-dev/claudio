@@ -464,8 +464,10 @@ function GitTab({
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && event.ctrlKey && busy === null && staged.length > 0 && message.trim()) {
-                void act({ type: 'commit', message }, () => setMessage(''))
+              if (event.key === 'Enter' && event.ctrlKey && busy === null) {
+                event.preventDefault()
+                if (pushPending) void act({ type: 'push' })
+                else if (staged.length > 0 && message.trim()) void act({ type: 'commit', message }, () => setMessage(''))
               }
             }}
           />
@@ -497,7 +499,7 @@ function GitTab({
         >
           {busy === 'commit' || busy === 'push' ? <Loader2 size={14} className="spin" aria-hidden /> : pushPending ? <ArrowUp size={14} aria-hidden /> : <Check size={14} aria-hidden />}
           <span>{busy === 'commit' ? 'Criando commit…' : busy === 'push' ? 'Enviando…' : pushPending ? 'Push' : 'Fazer commit'}</span>
-          {!pushPending && <kbd aria-hidden>Ctrl ↵</kbd>}
+          <kbd aria-hidden>Ctrl ↵</kbd>
         </button>
       </Section>
 

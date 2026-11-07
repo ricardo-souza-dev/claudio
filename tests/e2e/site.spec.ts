@@ -65,9 +65,9 @@ test('website: release download, mobile layout and unavailable release', async (
     await page.keyboard.press('End')
     await expect(page.getByRole('tab', { selected: true })).toHaveCount(1)
     await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'step-switch')
-    await page.getByText('Como o aplicativo é atualizado?', { exact: true }).click()
+    await page.locator('summary').filter({ hasText: 'Como o aplicativo é atualizado?' }).click()
     await expect(page.getByText('O app instalado consulta novas versões', { exact: false })).toBeVisible()
-    await page.getByText('Como o aplicativo é atualizado?', { exact: true }).click()
+    await page.locator('summary').filter({ hasText: 'Como o aplicativo é atualizado?' }).click()
     await page.screenshot({ path: 'test-results/site-desktop.png', fullPage: true })
     for (const width of [320, 390, 620, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 })

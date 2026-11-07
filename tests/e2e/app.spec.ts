@@ -552,7 +552,13 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   const primaryAction = panel.locator('.commit-button')
   await expect(primaryAction).toHaveAccessibleName('Push')
   await expect(primaryAction).toBeEnabled()
-  await expect(primaryAction.locator('kbd')).toHaveCount(0)
+  await expect(primaryAction.locator('kbd')).toHaveText('Ctrl ↵')
+  const alignment = await primaryAction.evaluate((button) => {
+    const outer = button.getBoundingClientRect()
+    const label = button.querySelector('span')!.getBoundingClientRect()
+    return Math.abs((label.left + label.right) / 2 - (outer.left + outer.right) / 2)
+  })
+  expect(alignment).toBeLessThan(2)
   expect(repo('rev-list', '--count', '@{upstream}..HEAD')).toBe('1')
 
   // Staging another change takes priority over a pending push.
@@ -567,7 +573,7 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(primaryAction).toHaveAccessibleName('Push')
   await rm(path.join(workspace, 'outro.txt'))
 
-  await primaryAction.click()
+  await panel.getByLabel('Texto do commit').press('Control+Enter')
   await expect(primaryAction).toHaveAccessibleName('Fazer commit')
   await expect(primaryAction).toBeDisabled()
   expect(repo('rev-parse', '@{upstream}')).toBe(repo('rev-parse', 'HEAD'))
