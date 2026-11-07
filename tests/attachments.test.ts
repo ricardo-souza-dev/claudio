@@ -211,7 +211,7 @@ describe('validação de anexos', () => {
 })
 
 describe('velocidade medida', () => {
-  const vault: Vault = { encrypt: (text) => text, decrypt: (text) => text }
+  const vault: Vault = { encrypt: async (text) => text, decrypt: async (text) => text }
 
   it('learns how fast a model is, weighing recent answers more, and survives a restart', async () => {
     const settings = new SettingsStore(dir, vault, {})

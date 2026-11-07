@@ -20,13 +20,13 @@ const TITLE_BAR_HEIGHT = 40
 const ICON = join(__dirname, '../../resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
 
 const vault: Vault = {
-  encrypt(text) {
-    if (!safeStorage.isEncryptionAvailable()) {
+  async encrypt(text) {
+    if (!(await safeStorage.isAsyncEncryptionAvailable())) {
       throw new Error('Este sistema não oferece armazenamento seguro, então a chave não foi salva. Use uma variável de ambiente.')
     }
-    return safeStorage.encryptString(text).toString('base64')
+    return (await safeStorage.encryptStringAsync(text)).toString('base64')
   },
-  decrypt: (data) => safeStorage.decryptString(Buffer.from(data, 'base64'))
+  decrypt: async (data) => (await safeStorage.decryptStringAsync(Buffer.from(data, 'base64'))).result
 }
 
 let window: BrowserWindow | null = null
@@ -99,7 +99,7 @@ async function start(): Promise<void> {
   await facts.load()
   const models = new ModelDirectory(settings, facts)
   const mcp = new McpManager((servers) => emit({ type: 'mcp', servers }))
-  for (const server of settings.mcpServers()) mcp.connect(server)
+  for (const server of await settings.mcpServers()) mcp.connect(server)
 
   const pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>()
   const pendingQuestions = new Map<string, (answers: QuestionAnswer[] | null) => void>()
@@ -281,18 +281,18 @@ async function start(): Promise<void> {
   handle('mcp.list', () => mcp.status())
   handle('mcp.add', async (json: string) => {
     const incoming = parseMcpJson(json)
-    const kept = settings.mcpServers().filter((server) => !incoming.some((entry) => entry.name === server.name))
+    const kept = (await settings.mcpServers()).filter((server) => !incoming.some((entry) => entry.name === server.name))
     await settings.setMcpServers([...kept, ...incoming])
     for (const server of incoming) mcp.connect(server)
     return mcp.status()
   })
   handle('mcp.remove', async (name: string) => {
-    await settings.setMcpServers(settings.mcpServers().filter((server) => server.name !== name))
+    await settings.setMcpServers((await settings.mcpServers()).filter((server) => server.name !== name))
     await mcp.remove(name)
     return mcp.status()
   })
-  handle('mcp.reconnect', (name: string) => {
-    const server = settings.mcpServers().find((entry) => entry.name === name)
+  handle('mcp.reconnect', async (name: string) => {
+    const server = (await settings.mcpServers()).find((entry) => entry.name === name)
     if (server) mcp.connect(server)
     return mcp.status()
   })

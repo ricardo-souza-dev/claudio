@@ -26,23 +26,23 @@ export class ModelDirectory {
     }
   }
 
-  private adapter(providerId: string): ProviderAdapter {
-    const connection = this.settings.connection(providerId)
+  private async adapter(providerId: string): Promise<ProviderAdapter> {
+    const connection = await this.settings.connection(providerId)
     if (!connection) throw new Error(`Provedor não configurado: ${providerId}`)
     return createAdapter(connection)
   }
 
   private async fetch(providerId: string): Promise<ModelInfo[]> {
-    return this.adapter(providerId).listModels(AbortSignal.timeout(LIST_TIMEOUT_MS))
+    return (await this.adapter(providerId)).listModels(AbortSignal.timeout(LIST_TIMEOUT_MS))
   }
 
   /** A provider's own API wins; the public catalog fills in what it doesn't report. */
-  private enrich(listed: ModelInfo): ModelInfo {
+  private async enrich(listed: ModelInfo): Promise<ModelInfo> {
     const speed = this.settings.speedOf(listed)
     const model = speed ? { ...listed, speed } : listed
     const facts = this.facts.lookup(model.provider, model.id)
     if (!facts) return model
-    const protocol = this.settings.connection(model.provider)?.protocol ?? 'openai-chat'
+    const protocol = (await this.settings.connection(model.provider))?.protocol ?? 'openai-chat'
     return {
       ...model,
       contextWindow: model.contextWindow ?? facts.context,
@@ -62,7 +62,7 @@ export class ModelDirectory {
 
   async list(refresh = false): Promise<ModelListing> {
     if (refresh) this.invalidate()
-    const pending = this.settings.providers().filter((provider) => {
+    const pending = (await this.settings.providers()).filter((provider) => {
       if (this.cache.has(provider.id)) return false
       return provider.keySource !== null || !provider.needsKey
     })
@@ -77,12 +77,12 @@ export class ModelDirectory {
         }
       })
     )
-    const known = new Set(this.settings.providers().map((provider) => provider.id))
-    const models = [...this.cache.entries()]
+    const known = new Set((await this.settings.providers()).map((provider) => provider.id))
+    const models = await Promise.all([...this.cache.entries()]
       .filter(([id]) => known.has(id))
       .flatMap(([, list]) => list)
       .filter((model) => this.isTextModel(model))
-      .map((model) => this.enrich(model))
+      .map((model) => this.enrich(model)))
     return { models, errors: { ...this.errors } }
   }
 
@@ -98,14 +98,14 @@ export class ModelDirectory {
   }
 
   async resolve(ref: ModelRef): Promise<{ adapter: ProviderAdapter; info: ModelInfo }> {
-    const adapter = this.adapter(ref.provider)
+    const adapter = await this.adapter(ref.provider)
     let list = this.cache.get(ref.provider)
     if (!list) {
       list = await this.fetch(ref.provider).catch(() => [])
       if (list.length > 0) this.cache.set(ref.provider, list)
     }
     const known = list.find((model) => model.id === ref.id)
-    const providerName = this.settings.connection(ref.provider)!.name
-    return { adapter, info: this.enrich(known ?? { ...ref, label: ref.id, providerName }) }
+    const providerName = (await this.settings.connection(ref.provider))!.name
+    return { adapter, info: await this.enrich(known ?? { ...ref, label: ref.id, providerName }) }
   }
 }

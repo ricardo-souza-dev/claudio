@@ -426,8 +426,8 @@ describe('MCP', () => {
 
 describe('armazenamento', () => {
   const vault: Vault = {
-    encrypt: (text) => `cifrado:${Buffer.from(text).toString('base64')}`,
-    decrypt: (data) => Buffer.from(data.replace('cifrado:', ''), 'base64').toString()
+    encrypt: async (text) => `cifrado:${Buffer.from(text).toString('base64')}`,
+    decrypt: async (data) => Buffer.from(data.replace('cifrado:', ''), 'base64').toString()
   }
 
   it('defaults old preferences to the system theme and persists a manual choice', async () => {
@@ -447,39 +447,39 @@ describe('armazenamento', () => {
     await store.setKey('anthropic', 'sk-segredo')
     const disk = await readFile(path.join(root, 'settings.json'), 'utf8')
     expect(disk).not.toContain('sk-segredo')
-    expect(JSON.stringify(store.providers())).not.toContain('sk-segredo')
-    expect(store.providers().find((provider) => provider.id === 'anthropic')?.keySource).toBe('saved')
+    expect(JSON.stringify((await store.providers()))).not.toContain('sk-segredo')
+    expect((await store.providers()).find((provider) => provider.id === 'anthropic')?.keySource).toBe('saved')
 
     const reopened = new SettingsStore(root, vault, {})
     await reopened.load()
-    expect(reopened.connection('anthropic')?.apiKey).toBe('sk-segredo')
+    expect((await reopened.connection('anthropic'))?.apiKey).toBe('sk-segredo')
   })
 
   it('never sends an environment key to a custom endpoint', async () => {
     const store = new SettingsStore(root, vault, { OPENAI_API_KEY: 'do-ambiente' })
-    expect(store.connection('openai')?.apiKey).toBe('do-ambiente')
-    expect(store.providers().find((provider) => provider.id === 'openai')?.keySource).toBe('env')
+    expect((await store.connection('openai'))?.apiKey).toBe('do-ambiente')
+    expect((await store.providers()).find((provider) => provider.id === 'openai')?.keySource).toBe('env')
     await store.setBaseUrl('openai', 'https://outro.exemplo.com/v1')
-    expect(store.connection('openai')?.apiKey).toBeNull()
-    expect(store.connection('openai')?.official).toBe(false)
+    expect((await store.connection('openai'))?.apiKey).toBeNull()
+    expect((await store.connection('openai'))?.official).toBe(false)
   })
 
   it('stores MCP secrets encrypted', async () => {
     const store = new SettingsStore(root, vault, {})
     await store.setMcpServers(parseMcpJson('{"mcpServers":{"a":{"command":"x","env":{"TOKEN":"segredo-mcp"}}}}'))
     expect(await readFile(path.join(root, 'settings.json'), 'utf8')).not.toContain('segredo-mcp')
-    expect(store.mcpServers()[0].env).toEqual({ TOKEN: 'segredo-mcp' })
+    expect((await store.mcpServers())[0].env).toEqual({ TOKEN: 'segredo-mcp' })
   })
 
   it('adds and removes custom providers', async () => {
     const store = new SettingsStore(root, vault, {})
     await expect(store.addCustom({ name: 'x', protocol: 'openai-chat', baseUrl: 'ftp://y' })).rejects.toThrow('http')
     await store.addCustom({ name: 'Meu', protocol: 'openai-chat', baseUrl: 'https://y.com/v1/', key: 'k' })
-    const custom = store.providers().find((provider) => provider.custom)!
+    const custom = (await store.providers()).find((provider) => provider.custom)!
     expect(custom.baseUrl).toBe('https://y.com/v1')
-    expect(store.connection(custom.id)?.apiKey).toBe('k')
+    expect((await store.connection(custom.id))?.apiKey).toBe('k')
     await store.removeCustom(custom.id)
-    expect(store.connection(custom.id)).toBeNull()
+    expect((await store.connection(custom.id))).toBeNull()
   })
 
   it('persists threads and refuses ids that could escape its folder', async () => {

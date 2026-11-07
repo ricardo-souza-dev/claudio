@@ -7,8 +7,8 @@ import type { ProviderConnection } from './providers/types'
 import type { McpServerConfig } from './tools/mcp'
 
 export interface Vault {
-  encrypt(text: string): string
-  decrypt(data: string): string
+  encrypt(text: string): Promise<string>
+  decrypt(data: string): Promise<string>
 }
 
 interface CustomProvider {
@@ -123,18 +123,18 @@ export class SettingsStore {
     return PROVIDER_CATALOG.find((entry) => entry.id === id)
   }
 
-  private savedKey(id: string): string | null {
+  private async savedKey(id: string): Promise<string | null> {
     const stored = this.data.keys[id]
     if (!stored) return null
     try {
-      return this.vault.decrypt(stored)
+      return await this.vault.decrypt(stored)
     } catch {
       return null
     }
   }
 
-  private resolveKey(id: string): { key: string | null; source: ProviderView['keySource'] } {
-    const saved = this.savedKey(id)
+  private async resolveKey(id: string): Promise<{ key: string | null; source: ProviderView['keySource'] }> {
+    const saved = await this.savedKey(id)
     if (saved) return { key: saved, source: 'saved' }
     const definition = this.definition(id)
     // An environment key only ever goes to its vendor's own endpoint.
@@ -142,8 +142,8 @@ export class SettingsStore {
     return fromEnv ? { key: fromEnv, source: 'env' } : { key: null, source: null }
   }
 
-  providers(): ProviderView[] {
-    const builtIn = PROVIDER_CATALOG.map((definition): ProviderView => ({
+  async providers(): Promise<ProviderView[]> {
+    const builtIn = await Promise.all(PROVIDER_CATALOG.map(async (definition): Promise<ProviderView> => ({
       id: definition.id,
       name: definition.name,
       protocol: definition.protocol,
@@ -152,22 +152,22 @@ export class SettingsStore {
       custom: false,
       local: definition.local === true,
       needsKey: definition.local !== true,
-      keySource: this.resolveKey(definition.id).source,
+      keySource: (await this.resolveKey(definition.id)).source,
       envKey: definition.envKey,
       keyUrl: definition.keyUrl
-    }))
-    const custom = this.data.custom.map((entry): ProviderView => ({
+    })))
+    const custom = await Promise.all(this.data.custom.map(async (entry): Promise<ProviderView> => ({
       ...entry,
       defaultBaseUrl: entry.baseUrl,
       custom: true,
       local: false,
       needsKey: false,
-      keySource: this.resolveKey(entry.id).source
-    }))
+      keySource: (await this.resolveKey(entry.id)).source
+    })))
     return [...builtIn, ...custom]
   }
 
-  connection(id: string): ProviderConnection | null {
+  async connection(id: string): Promise<ProviderConnection | null> {
     const definition = this.definition(id)
     const custom = this.data.custom.find((entry) => entry.id === id)
     if (!definition && !custom) return null
@@ -178,20 +178,20 @@ export class SettingsStore {
       protocol: definition?.protocol ?? custom!.protocol,
       baseUrl: override ?? definition?.baseUrl ?? custom!.baseUrl,
       official: !!definition && !definition.local && !override,
-      apiKey: this.resolveKey(id).key,
+      apiKey: (await this.resolveKey(id)).key,
       quirks: definition?.quirks
     }
   }
 
   async setKey(id: string, key: string | null): Promise<void> {
-    if (!this.connection(id)) throw new Error('Provedor desconhecido.')
-    if (key?.trim()) this.data.keys[id] = this.vault.encrypt(key.trim())
+    if (!(await this.connection(id))) throw new Error('Provedor desconhecido.')
+    if (key?.trim()) this.data.keys[id] = await this.vault.encrypt(key.trim())
     else delete this.data.keys[id]
     await this.save()
   }
 
   async setBaseUrl(id: string, baseUrl: string | null): Promise<void> {
-    if (!this.connection(id)) throw new Error('Provedor desconhecido.')
+    if (!(await this.connection(id))) throw new Error('Provedor desconhecido.')
     const trimmed = baseUrl?.trim().replace(/\/+$/, '')
     const definition = this.definition(id)
     if (trimmed) {
@@ -209,8 +209,9 @@ export class SettingsStore {
     if (!input.name.trim()) throw new Error('Dê um nome ao provedor.')
     if (!/^https?:\/\//.test(baseUrl)) throw new Error('O endereço precisa começar com http:// ou https://')
     const id = `custom-${randomUUID().slice(0, 8)}`
+    const encryptedKey = input.key?.trim() ? await this.vault.encrypt(input.key.trim()) : null
     this.data.custom.push({ id, name: input.name.trim(), protocol: input.protocol, baseUrl })
-    if (input.key?.trim()) this.data.keys[id] = this.vault.encrypt(input.key.trim())
+    if (encryptedKey) this.data.keys[id] = encryptedKey
     await this.save()
   }
 
@@ -221,17 +222,17 @@ export class SettingsStore {
     await this.save()
   }
 
-  mcpServers(): McpServerConfig[] {
+  async mcpServers(): Promise<McpServerConfig[]> {
     if (!this.data.mcp) return []
     try {
-      return JSON.parse(this.vault.decrypt(this.data.mcp)) as McpServerConfig[]
+      return JSON.parse(await this.vault.decrypt(this.data.mcp)) as McpServerConfig[]
     } catch {
       return []
     }
   }
 
   async setMcpServers(servers: McpServerConfig[]): Promise<void> {
-    this.data.mcp = servers.length > 0 ? this.vault.encrypt(JSON.stringify(servers)) : null
+    this.data.mcp = servers.length > 0 ? await this.vault.encrypt(JSON.stringify(servers)) : null
     await this.save()
   }
 }
