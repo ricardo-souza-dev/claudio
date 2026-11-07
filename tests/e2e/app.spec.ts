@@ -14,7 +14,8 @@ const running: { app: ElectronApplication; page: Page; problems: string[] }[] = 
 async function launch(extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page; problems: string[] }> {
   const app = await electron.launch({
     args: [path.resolve('out/main/index.js')],
-    env: { ...process.env, CLAUDIO_DATA_DIR: dataDir, CLAUDIO_MODEL_FACTS_URL: `${llm.url}/facts.json`, ...extraEnv } as Record<string, string>
+    // Tests must load the production build, even when launched from the running dev app.
+    env: { ...process.env, ELECTRON_RENDERER_URL: '', CLAUDIO_DATA_DIR: dataDir, CLAUDIO_MODEL_FACTS_URL: `${llm.url}/facts.json`, ...extraEnv } as Record<string, string>
   })
   const page = await app.firstWindow()
   const problems: string[] = []
@@ -1065,7 +1066,8 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await page.getByRole('button', { name: 'Enviar', exact: true }).click({ trial: true })
   await page.getByRole('button', { name: 'Abrir painel do projeto' }).click()
   await expect(projectPanel).toBeVisible()
-  await expect(page.getByRole('tab', { name: /^Git/ })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /^Git/ })).toBeVisible({ timeout: 15_000 })
+  expect(await projectPanel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   await shot(page, '33-painel-flutuante')
   // Floating over the conversation, it has its own way out.
   await page.getByRole('button', { name: 'Fechar painel', exact: true }).click()
