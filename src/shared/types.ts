@@ -371,6 +371,12 @@ export interface Preferences {
 /** Everything the renderer may ask of the main process. Secrets only ever flow inward. */
 export interface UniApi {
   platform: string
+  updates: {
+    status(): Promise<UpdateStatus>
+    check(): Promise<UpdateStatus>
+    download(): Promise<UpdateStatus>
+    install(): Promise<void>
+  }
   prefs: {
     get(): Promise<Preferences>
     set(patch: Partial<Preferences>): Promise<Preferences>

@@ -4,7 +4,9 @@ import type { McpStatus, ModelInfo, Preferences, Protocol, ProviderTest, Provide
 import { remoteErrorMessage } from './format'
 import { api } from './store'
 
-type Tab = 'providers' | 'mcp' | 'memory'
+import { Updates } from './Updates'
+
+type Tab = 'providers' | 'mcp' | 'memory' | 'updates'
 
 interface SettingsProps {
   providers: ProviderView[]
@@ -379,7 +381,8 @@ export function Settings(props: SettingsProps) {
   const tabs: [Tab, string][] = [
     ['providers', 'Provedores'],
     ['mcp', 'Ferramentas MCP'],
-    ['memory', 'Memória']
+    ['memory', 'Memória'],
+    ['updates', 'Atualizações']
   ]
 
   return (
@@ -402,6 +405,7 @@ export function Settings(props: SettingsProps) {
           {tab === 'providers' && <ProvidersTab providers={props.providers} models={props.models} errors={props.errors} onProviders={props.onProviders} onClose={onClose} />}
           {tab === 'mcp' && <McpTab mcp={props.mcp} onMcp={props.onMcp} />}
           {tab === 'memory' && <MemoryTab prefs={props.prefs} onPrefs={props.onPrefs} />}
+          {tab === 'updates' && <Updates />}
         </div>
       </div>
     </div>

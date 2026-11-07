@@ -98,6 +98,8 @@ export class Runner {
 
   constructor(private deps: RunnerDeps) {}
 
+  get hasActiveRuns(): boolean { return this.active.size > 0 }
+
   isRunning(threadId: string): boolean {
     return this.active.has(threadId)
   }

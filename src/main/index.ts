@@ -11,6 +11,8 @@ import { resolveProjectRoot } from './project'
 import { SettingsStore, ThreadStore, type Vault } from './store'
 import { resolveInside, workspaceTools } from './tools/builtin'
 import { McpManager, parseMcpJson } from './tools/mcp'
+import electronUpdater from 'electron-updater'
+import { UpdateService } from './updates'
 
 const DARK = { background: '#1e1e1e', symbols: '#ececec' }
 const LIGHT = { background: '#f7f7f7', symbols: '#1a1a1a' }
@@ -140,6 +142,17 @@ async function start(): Promise<void> {
         emit({ type: 'question', threadId, request })
       })
   })
+
+  const updates = new UpdateService(electronUpdater.autoUpdater, app.getVersion(), app.isPackaged && process.platform === 'win32', () => runner.hasActiveRuns, (status) => emit({ type: 'update', status }))
+  handle('updates.status', () => updates.status())
+  handle('updates.check', () => updates.check())
+  handle('updates.download', () => updates.download())
+  handle('updates.install', () => updates.install())
+  if (app.isPackaged && process.platform === 'win32') {
+    const initial = setTimeout(() => void updates.check(), 20_000)
+    const periodic = setInterval(() => void updates.check(), 6 * 60 * 60 * 1000)
+    app.on('before-quit', () => { clearTimeout(initial); clearInterval(periodic) })
+  }
 
   handle('prefs.get', () => settings.prefs())
   handle('prefs.set', async (patch: Parameters<SettingsStore['setPrefs']>[0]) => {

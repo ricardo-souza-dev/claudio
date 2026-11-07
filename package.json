@@ -13,7 +13,10 @@
     "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "electron-vite build && playwright test"
+    "test:e2e": "electron-vite build && playwright test",
+    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "site:build": "node scripts/build-site.mjs",
+    "site:dev": "vite site --host 127.0.0.1"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

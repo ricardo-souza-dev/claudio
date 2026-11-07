@@ -2829,3 +2829,7 @@ button.chip:hover {
     transition: none;
   }
 }
+
+.update-banner { padding: 8px 18px; border-bottom: 1px solid var(--border); background: var(--bg-raised, #242a38); color: var(--text); font-size: 12px; }
+.update-banner .button { margin-left: 8px; }
+.update-settings p { max-width: 560px; line-height: 1.6; }

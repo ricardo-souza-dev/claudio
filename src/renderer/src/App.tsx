@@ -12,6 +12,7 @@ import { ProjectPanel } from './ProjectPanel'
 import { Settings } from './Settings'
 import { api, useAppStore } from './store'
 import { Transcript } from './Transcript'
+import { Updates } from './Updates'
 
 /** Below this width the panel stays closed until asked for, leaving the conversation room to breathe. */
 const PANEL_MIN_WIDTH = 1100
@@ -332,6 +333,7 @@ export function App() {
       </aside>
 
       <main className="main">
+        <Updates compact />
         <header className="topbar">
           <div className="topbar-title">{needsProject ? 'Escolha um projeto' : thread.title}</div>
           {!needsProject && (

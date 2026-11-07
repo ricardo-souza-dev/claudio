@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Uma só conversa, memória e caixa de ferramentas para qualquer modelo de IA. Conheça o Claudio e baixe a versão de testes para Windows.">
+  <meta name="theme-color" content="#111214">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Claudio — Sua conversa. Qualquer modelo.</title>
+  <link rel="icon" href="./icon.png">
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./releases.js"></script>
+</head>
+<body>
+  <a class="skip" href="#conteudo">Pular para o conteúdo</a>
+  <header class="navigation wrap">
+    <a class="brand" href="./" aria-label="Claudio, início"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1v22" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="currentColor"/></svg>claudio<span class="tag">prévia</span></a>
+    <nav aria-label="Principal"><a href="#recursos">Por que Claudio</a><a href="#como-funciona">Como funciona</a><a class="nav-download" href="#downloads">Downloads <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="conteudo">
+    <section class="hero wrap">
+      <div class="eyebrow"><span class="status-dot"></span> UM PROJETO INDEPENDENTE. UMA CONVERSA SUA.</div>
+      <h1>Troque o modelo.<br>Não a <span>conversa.</span></h1>
+      <p class="hero-copy">Comece com um modelo, continue com outro. O histórico, a memória e as ferramentas vão juntos — dentro do seu projeto.</p>
+      <div class="hero-actions"><a class="button primary" href="#downloads">Conhecer a versão para Windows <span aria-hidden="true">↓</span></a><a class="text-link" href="https://github.com/ricardo-souza-dev/claudio">Ver no GitHub <span aria-hidden="true">↗</span></a></div>
+      <p class="fine">Você usa suas chaves de API. Sem depender de um único fornecedor.</p>
+      <div class="product-visual" role="img" aria-label="Ilustração do conceito: dois modelos continuam a mesma conversa sobre um projeto. Não é uma captura do aplicativo.">
+        <div class="window-bar"><div class="window-dots"><i></i><i></i><i></i></div><span>claudio / meu-projeto</span><span class="illustration-label">ILUSTRAÇÃO DO FLUXO</span></div>
+        <div class="mock-app">
+          <aside class="mock-sidebar"><strong>Projetos</strong><div class="mock-project">⌑ meu-projeto</div><div class="mock-selected">Autenticação da API</div><div>Revisão de testes</div><div class="mock-bottom">Uma conversa.<br>Do início ao fim.</div></aside>
+          <div class="mock-conversation"><div class="mock-user">Vamos implementar a autenticação desta API.</div><div class="model-line"><span class="model-dot blue"></span> MODELO A <span class="line"></span></div><p>Vou analisar a estrutura do projeto e propor os próximos passos.</p><div class="mock-tool"><span>✓</span> read_file <span class="muted">src/auth.ts</span></div><div class="mock-user">Agora revise a solução com outro modelo.</div><div class="model-line"><span class="model-dot green"></span> MODELO B <span class="line"></span></div><p>Continuando a partir do histórico e dos arquivos já lidos, vou revisar a implementação.</p><div class="mock-composer">Continue de onde você parou… <span>↑</span></div></div>
+          <aside class="mock-files"><strong>Seu projeto</strong><div>⌄ src</div><div class="indent">auth.ts <span>M</span></div><div class="indent">index.ts</div><div>⌄ tests</div><div class="indent">auth.test.ts</div><div class="mock-git">Git, arquivos e contexto.<br>No mesmo lugar.</div></aside>
+        </div>
+      </div>
+      <div class="providers"><span>CONECTE SEUS PROVEDORES</span><p>Anthropic <b>·</b> OpenAI <b>·</b> Gemini <b>·</b> OpenRouter <b>·</b> Ollama <b>·</b> e outros</p></div>
+    </section>
+    <section class="section wrap" id="recursos"><div class="section-heading"><p class="eyebrow">MENOS RECOMEÇOS. MAIS CONTINUIDADE.</p><h2>O contexto fica.<br>A escolha é sua.</h2><p>Não é só ter vários modelos numa lista. É poder continuar o trabalho sem explicar tudo de novo.</p></div>
+      <div class="features"><article><span class="feature-number">01 / CONVERSA</span><h3>Outro modelo.<br>O mesmo fio.</h3><p>Troque de fornecedor no meio do trabalho. O próximo modelo recebe o histórico, incluindo as ferramentas usadas antes.</p></article><article><span class="feature-number">02 / PROJETO</span><h3>Seu código como<br>ponto de partida.</h3><p>Cada conversa começa numa pasta. Arquivos, comandos e um painel Git ficam perto do que você está construindo.</p></article><article><span class="feature-number">03 / CONTROLE</span><h3>Você decide<br>o que pode rodar.</h3><p>Revise comandos e alterações antes de aprovar. Veja tokens e custo estimado, escolha a força do modelo e interrompa quando precisar.</p></article></div>
+      <div class="detail-strip"><span>Memória compartilhada</span><span>Ferramentas MCP</span><span>Anexos e imagens</span><span>Modelo automático</span><span>Git integrado</span></div>
+    </section>
+    <section class="section getting-started" id="como-funciona"><div class="wrap steps-layout"><div><p class="eyebrow">DO DOWNLOAD AO PRIMEIRO PEDIDO</p><h2>Seu projeto.<br>Sua chave.<br>Vamos trabalhar.</h2><p class="muted">As assinaturas do ChatGPT Plus e do Claude não incluem o uso das APIs. O consumo é cobrado pelo fornecedor escolhido.</p></div><ol class="steps"><li><span>1</span><div><h3>Instale e escolha uma pasta</h3><p>Abra um projeto no computador. Git é opcional.</p></div></li><li><span>2</span><div><h3>Conecte um provedor</h3><p>Adicione sua chave em Ajustes → Provedores. Também é possível usar modelos locais com Ollama ou LM Studio.</p></div></li><li><span>3</span><div><h3>Comece a conversa</h3><p>Escolha um modelo ou use o modo automático. Quando quiser trocar, o histórico continua lá.</p></div></li></ol></div></section>
+    <section class="section wrap downloads" id="downloads"><div><p class="eyebrow">COMECE POR AQUI</p><h2>Claudio no<br>seu computador.</h2><p>Primeiro lançamento para Windows, em versão de testes. macOS e Linux ainda não estão disponíveis.</p></div><div class="download-card"><div class="download-heading"><span class="windows-icon" aria-hidden="true">⊞</span><div><h3>Windows</h3><p>Instalador · x64 · Windows 10 ou superior</p></div><span class="tag">prévia</span></div><p id="release-status" role="status">Consultando a versão publicada…</p><a id="download" class="button primary" hidden>Baixar para Windows <span aria-hidden="true">↓</span></a><a id="release-notes" class="text-link" href="https://github.com/ricardo-souza-dev/claudio/releases">Consultar lançamentos no GitHub ↗</a><noscript><p>Consulte os instaladores disponíveis na página de lançamentos do GitHub.</p></noscript><p class="fine">Se o Windows exibir um aviso de editor desconhecido, confira a origem do arquivo antes de decidir instalar. Não desative a proteção do sistema.</p></div></section>
+    <section class="section wrap faq"><p class="eyebrow">ANTES DE INSTALAR</p><h2>Sem letras miúdas.</h2><details><summary>Como o aplicativo é atualizado?</summary><p>O app instalado consulta novas versões no GitHub. Você escolhe baixar e depois reiniciar para instalar. A instalação é bloqueada enquanto um agente estiver trabalhando. Conversas e configurações ficam fora da pasta do programa; recomendamos manter cópias de segurança antes de atualizar uma versão de testes.</p></details><details><summary>Meus dados ficam só no computador?</summary><p>Conversas e configurações são guardadas localmente. Ao conversar, o histórico e os dados necessários são enviados ao provedor que você escolher. Ferramentas MCP também podem se conectar a serviços externos. Chaves salvas são criptografadas pelo sistema operacional.</p></details><details><summary>O agente pode executar qualquer comando?</summary><p>Por padrão, alterações e comandos pedem sua aprovação. Não há sandbox: um comando aprovado roda com as suas permissões. Use Git, revise o que vai executar e faça backups. Ainda não existe um botão para desfazer todas as alterações do agente.</p></details><details><summary>O que ainda está em desenvolvimento?</summary><p>O Claudio está em testes. Conversas longas ainda não têm compactação, comandos não exibem saída ao vivo e a validação com APIs reais ainda é limitada. Consulte o README para o estado atual antes de usar em trabalho importante.</p></details><details><summary>O Claudio é da Anthropic?</summary><p>Não. É um projeto independente, sem vínculo com a Anthropic ou com os outros fornecedores conectados.</p></details></section>
+    <section class="closing wrap"><h2>Seu próximo modelo não precisa<br>ser uma conversa do zero.</h2><a class="button primary" href="#downloads">Ver downloads <span aria-hidden="true">↗</span></a></section>
+  </main>
+  <footer class="wrap"><a class="brand" href="./">claudio</a><p>Uma conversa. Qualquer modelo.</p><a href="https://github.com/ricardo-souza-dev/claudio#readme">Documentação ↗</a><a href="https://github.com/ricardo-souza-dev/claudio/issues">Relatar um problema ↗</a></footer>
+</body>
+</html>

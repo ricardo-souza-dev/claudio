@@ -1,0 +1,29 @@
+appId: dev.claudio.app
+productName: Claudio
+artifactName: Claudio-Setup-${version}-${arch}.${ext}
+directories:
+  output: dist
+files:
+  - out/**/*
+  - resources/icon.png
+  - resources/icon.ico
+  - package.json
+asar: true
+npmRebuild: false
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: ricardo-souza-dev
+  repo: claudio
+  releaseType: draft

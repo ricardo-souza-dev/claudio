@@ -145,6 +145,7 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
       return { ...state, errors: { ...state.errors, [event.threadId]: event.text } }
     case 'mcp':
       return { ...state, mcp: event.servers }
+    case 'update':
     case 'models-changed':
       return state
     case 'delta':

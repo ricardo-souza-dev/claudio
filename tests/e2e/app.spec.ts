@@ -1149,3 +1149,15 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   expect(problems).toEqual([])
   await app.close()
 })
+
+test('update settings show installed version without network access in development', async () => {
+  const { app, page } = await launch()
+  await page.getByRole('button', { name: 'Ajustes', exact: true }).click()
+  await page.getByRole('button', { name: 'Atualizações', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Atualizações', exact: true })).toBeVisible()
+  await expect(page.getByText('Nesta execução de desenvolvimento', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Verificar atualizações', exact: true })).toHaveCount(0)
+  const status = await page.evaluate(() => window.uni.updates.check())
+  expect(status.state).toBe('unavailable')
+  await app.close()
+})
