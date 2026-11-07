@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ApprovalPreview } from '../../shared/types'
-import type { Tool, ToolResult } from './types'
+import { PLAN_TOOL, type Tool, type ToolResult } from './types'
 
 const MAX_READ_LINES = 2000
 const MAX_OUTPUT_CHARS = 100_000
@@ -15,7 +15,7 @@ const COMMAND_TAIL_CHARS = 10_000
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 600_000
 
-const SKIPPED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', '.next', '.venv', '__pycache__', 'target', '.cache'])
+export const SKIPPED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out', '.next', '.venv', '__pycache__', 'target', '.cache'])
 const SENSITIVE_FILE =
   /(^|[\\/])(\.env(\.(?!example$|sample$|template$)[^\\/]+)?|[^\\/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa|dsa)|credentials(\.json)?|\.npmrc|\.netrc|\.pypirc|secrets?\.(json|ya?ml|toml))$/i
 
@@ -78,7 +78,7 @@ function globToRegex(glob: string): RegExp {
   return new RegExp(`^${source}$`, 'i')
 }
 
-async function* walk(dir: string): AsyncGenerator<string> {
+export async function* walk(dir: string): AsyncGenerator<string> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
   for (const entry of entries) {
     if (entry.isSymbolicLink()) continue
@@ -175,8 +175,32 @@ const pathPreview = (input: Record<string, unknown>): ApprovalPreview => ({ kind
 export function workspaceTools(root: string): Tool[] {
   const tools: Tool[] = [
     {
+      name: PLAN_TOOL,
+      description:
+        'Show the user a short task list while you work. Use it for work with three or more steps: send the whole list each time, keep exactly one step in_progress, and update it as steps finish.',
+      schema: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                content: { type: 'string', description: 'The step, in a few words, in the language of the conversation.' },
+                status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] }
+              },
+              required: ['content', 'status']
+            }
+          }
+        },
+        required: ['items']
+      },
+      risk: () => 'read',
+      preview: (input) => ({ kind: 'json', json: JSON.stringify(input, null, 2) }),
+      run: async () => ({ content: 'Lista atualizada.' })
+    },
+    {
       name: 'read_file',
-      readOnly: true,
       description: `Read a text file in the working folder. Returns up to ${MAX_READ_LINES} lines; use offset and limit for more.`,
       schema: {
         type: 'object',
@@ -203,7 +227,6 @@ export function workspaceTools(root: string): Tool[] {
     },
     {
       name: 'list_dir',
-      readOnly: true,
       description: 'List the files and folders in a directory of the working folder. Folders end with a slash.',
       schema: {
         type: 'object',
@@ -225,7 +248,6 @@ export function workspaceTools(root: string): Tool[] {
     },
     {
       name: 'search',
-      readOnly: true,
       description: 'Search file contents with a regular expression. Skips dependency folders, binaries and files that usually hold secrets.',
       schema: {
         type: 'object',
@@ -268,7 +290,6 @@ export function workspaceTools(root: string): Tool[] {
     },
     {
       name: 'write_file',
-      readOnly: false,
       description: 'Create a file or replace its whole content. Prefer edit_file for changes to an existing file.',
       schema: {
         type: 'object',
@@ -292,7 +313,6 @@ export function workspaceTools(root: string): Tool[] {
     },
     {
       name: 'edit_file',
-      readOnly: false,
       description: 'Replace an exact piece of text in a file. old_string must match exactly and appear once, unless replace_all is true.',
       schema: {
         type: 'object',
@@ -330,7 +350,6 @@ export function workspaceTools(root: string): Tool[] {
     },
     {
       name: 'run_command',
-      readOnly: false,
       description: `Run a shell command in the working folder (${process.platform === 'win32' ? 'PowerShell' : 'POSIX shell'}). Output is returned when the command ends.`,
       schema: {
         type: 'object',

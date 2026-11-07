@@ -6,14 +6,16 @@ O Claudio é um projeto independente, sem vínculo com a Anthropic nem com os ou
 
 Em ferramentas como o Codex e o Claude Code, a conversa fica presa a um fornecedor. Aqui, ela pertence a você: comece com um modelo, passe para outro no meio do trabalho, e o novo modelo continua de onde o anterior parou, com o mesmo histórico, as mesmas instruções e as mesmas ferramentas.
 
+Toda conversa parte de uma pasta no seu computador, para que qualquer modelo trabalhe com o contexto geral do projeto. O Git é opcional: se a pasta for um repositório, um painel à direita reúne alterações, branches, commits e PRs, inclusive de submódulos e de outros repositórios dentro da pasta.
+
 ## O que "unicidade" significa aqui
 
 | | |
 |---|---|
 | **Uma conversa** | Todo modelo lê e continua o mesmo histórico, inclusive as chamadas de ferramenta feitas por outro fornecedor. |
-| **Uma memória** | A memória global e os arquivos `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` e `.cursorrules` chegam iguais a todos os modelos. |
+| **Um projeto** | Branch, endereço do repositório, nomes dos arquivos dos dois primeiros níveis e README chegam iguais a todos os modelos desde a primeira mensagem. |
+| **Uma memória** | A memória global e os arquivos `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` e `.cursorrules` também chegam iguais a todos. |
 | **Uma caixa de ferramentas** | Arquivos, comandos e servidores MCP ficam disponíveis para qualquer modelo que aceite ferramentas, mesmo sem suporte próprio a MCP. |
-| **Uma resposta** | No modo Conselho, vários modelos respondem em paralelo e um deles une tudo em uma única resposta. Só ela entra no histórico. |
 
 ## Como rodar
 
@@ -27,9 +29,29 @@ npm install
 npm run dev
 ```
 
-Depois, abra **Ajustes → Provedores** e cole uma chave de API. A lista de modelos vem da API de cada provedor, então modelos novos aparecem sem atualizar o app. Ollama e LM Studio são detectados sozinhos se estiverem rodando.
+Depois, escolha a pasta do projeto, abra **Ajustes → Provedores** e cole uma chave de API. A lista de modelos vem da API de cada provedor, então modelos novos aparecem sem atualizar o app. Ollama e LM Studio são detectados sozinhos se estiverem rodando.
 
 Atalhos: `Ctrl+K` troca de modelo, `Ctrl+N` abre uma conversa nova, `Enter` envia e `Shift+Enter` quebra a linha.
+
+## Enquanto o modelo trabalha
+
+- **Modelo:** escolha um, ou deixe em **Automático** para o Claudio decidir a cada mensagem, pelo pedido, pelo tamanho do contexto, pelas imagens anexadas e pelo preço. O seletor recomenda um modelo e mostra custo, força e tempo aproximados de cada um. O tempo é medido nas suas próprias respostas.
+- **Anexos:** clique no clipe, arraste ou cole um print direto na caixa de mensagem. Imagens, PDFs e arquivos de texto ficam disponíveis para qualquer modelo que continuar a conversa.
+- **Força:** de Baixa a Máxima, nos modelos que aceitam esse ajuste.
+- **Medidor de contexto:** mostra quanto do limite já foi usado. Ao clicar, traz tokens de entrada, saída e cache, além do custo estimado. Limites e preços vêm do [models.dev](https://models.dev) e podem variar.
+- **Execução:** tempo, tokens, lista de tarefas e fila de mensagens ficam sempre à vista.
+
+## Git
+
+O painel à direita reúne alterações com diff, preparar, descartar, commit, branches, fetch, pull e push, sempre sem forçar nada. Submódulos e outros repositórios dentro da pasta aparecem cada um com seus próprios controles.
+
+O botão de IA na caixa de commit lê o que está preparado, ou tudo quando nada está, e escreve a mensagem no padrão Conventional Commits, no idioma dos commits recentes. Você revisa antes de confirmar. O conteúdo de arquivos que costumam guardar segredos, como `.env`, não é enviado ao modelo.
+
+Para listar e criar PRs, instale o [GitHub CLI](https://cli.github.com). Em uma pasta sem Git, o painel mostra só os arquivos e oferece iniciar um repositório.
+
+## Navegador
+
+Em **Ajustes → Ferramentas MCP**, os atalhos de Chrome conectam um servidor de navegador que qualquer modelo com ferramentas pode usar. Cada ação pede confirmação, porque uma página pode tentar dar ordens ao modelo.
 
 ## Provedores
 
@@ -40,7 +62,7 @@ Qualquer outro serviço que fale um dos quatro protocolos (Anthropic Messages, O
 ## Segurança
 
 - As chaves ficam criptografadas pelo sistema operacional e nunca chegam à interface. Uma chave vinda de variável de ambiente só é enviada ao endereço oficial do fornecedor dela.
-- As ferramentas só alcançam a pasta escolhida, e links simbólicos não escapam dela.
+- As ferramentas só alcançam o projeto escolhido, e links simbólicos não escapam dele. O contexto enviado aos modelos traz nomes de arquivos e o README, nunca o conteúdo do código, e remove credenciais do endereço do repositório.
 - Alterar arquivos, executar comandos e usar MCP pedem confirmação, a menos que você escolha outro modo. Arquivos que costumam guardar segredos, como `.env`, sempre pedem.
 - Comandos não recebem as chaves de API do ambiente do app, e a resposta de um modelo não vira HTML nem carrega imagens remotas.
 - **Não há sandbox:** um comando aprovado roda com as suas permissões. Leia antes de permitir.
@@ -50,10 +72,16 @@ Qualquer outro serviço que fale um dos quatro protocolos (Anthropic Messages, O
 ```
 src/shared/types.ts      O formato canônico da conversa e o contrato entre os processos
 src/main/providers/      Um adaptador por protocolo, traduzindo de e para o formato canônico
-src/main/agent/          O ciclo do agente, o Conselho e as permissões em ação
+src/main/agent/          O ciclo do agente e as permissões em ação
 src/main/tools/          Ferramentas internas e cliente MCP
+src/main/project.ts      Raiz do projeto e contexto geral enviado aos modelos
+src/main/git.ts          O que o painel faz com git e gh
+src/main/commit-message.ts  A mensagem de commit escrita por um modelo
+src/main/attachments.ts  Anexos, guardados fora do arquivo da conversa
+src/main/model-facts.ts  Limites, preços e capacidades vindos do models.dev
 src/main/store.ts        Chaves criptografadas e conversas em arquivos JSON
 src/renderer/            A interface (React), sem acesso a Node
+resources/               Ícones, gerados por scripts/make-icons.mjs
 ```
 
 A decisão central está em `Message`: cada mensagem guarda as partes canônicas, que qualquer modelo entende, e também o formato original do provedor (`raw`). Quando o mesmo provedor continua a conversa, o original é reenviado byte a byte, o que preserva raciocínio assinado e cache de prompt. Quando outro provedor assume, ele recebe a versão canônica, com ids e assinaturas ajustados às regras dele.
@@ -74,8 +102,11 @@ Os testes usam um servidor local que simula os quatro protocolos, passando pelos
 
 ## Limitações atuais
 
-- Só modelos de texto: geração de imagem, áudio e vídeo ainda não entram, e também não há anexos.
+- Só modelos de texto: geração de imagem, áudio e vídeo ainda não entram.
+- Ainda não dá para desfazer de uma vez o que um modelo alterou. Use o Git para isso.
+- Conversas muito longas ainda não são compactadas.
+- A saída de um comando só aparece quando ele termina.
+- Imagens devolvidas por ferramentas MCP são omitidas, inclusive capturas de tela do navegador.
 - MCP remoto funciona com cabeçalhos fixos. OAuth ainda não é suportado.
 - Usa chaves de API, cobradas à parte das assinaturas como ChatGPT Plus ou Claude Max.
-- Conversas muito longas ainda não são compactadas.
 - Ainda não há instalador.

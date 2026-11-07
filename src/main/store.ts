@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { ModelRef, Preferences, Protocol, ProviderView, Thread, ThreadSummary } from '../shared/types'
+import { modelKey, NEW_THREAD_TITLE, type ModelRef, type ModelSpeed, type Preferences, type Protocol, type ProviderView, type Thread, type ThreadSummary } from '../shared/types'
 import { PROVIDER_CATALOG } from './providers/catalog'
 import type { ProviderConnection } from './providers/types'
 import type { McpServerConfig } from './tools/mcp'
@@ -25,14 +25,21 @@ interface SettingsFile {
   /** Encrypted as a whole: env vars and headers usually hold tokens. */
   mcp: string | null
   prefs: Preferences
+  /** How fast each model has been here, by model key. */
+  speeds?: Record<string, ModelSpeed>
 }
+
+const MIN_OUTPUT_TO_MEASURE = 5
+const MIN_GENERATING_MS = 50
+/** Recent answers count more, so a provider that got faster or slower shows up quickly. */
+const SPEED_SMOOTHING = 0.3
 
 const EMPTY: SettingsFile = {
   keys: {},
   baseUrls: {},
   custom: [],
   mcp: null,
-  prefs: { memory: '', lastModel: null, councilVoices: [], permissionMode: 'ask' }
+  prefs: { memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: false }
 }
 
 async function writeAtomic(file: string, text: string): Promise<void> {
@@ -85,6 +92,25 @@ export class SettingsStore {
 
   prefs(): Preferences {
     return this.data.prefs
+  }
+
+  speedOf(model: ModelRef): ModelSpeed | undefined {
+    return this.data.speeds?.[modelKey(model)]
+  }
+
+  recordSpeed(model: ModelRef, firstTokenMs: number, generatingMs: number, outputTokens: number): void {
+    if (outputTokens < MIN_OUTPUT_TO_MEASURE) return
+    const tokensPerSecond = outputTokens / (Math.max(generatingMs, MIN_GENERATING_MS) / 1000)
+    const previous = this.speedOf(model)
+    const blend = (old: number | undefined, next: number): number => (old === undefined ? next : old + (next - old) * SPEED_SMOOTHING)
+    this.data.speeds = {
+      ...this.data.speeds,
+      [modelKey(model)]: {
+        tokensPerSecond: blend(previous?.tokensPerSecond, tokensPerSecond),
+        firstTokenMs: blend(previous?.firstTokenMs, firstTokenMs)
+      }
+    }
+    void this.save().catch(() => undefined)
   }
 
   async setPrefs(patch: Partial<Preferences>): Promise<Preferences> {
@@ -263,7 +289,7 @@ export class ThreadStore {
     const now = Date.now()
     const thread: Thread = {
       id: randomUUID(),
-      title: 'Nova conversa',
+      title: NEW_THREAD_TITLE,
       createdAt: now,
       updatedAt: now,
       workspace,

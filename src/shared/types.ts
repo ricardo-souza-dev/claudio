@@ -8,6 +8,23 @@ export interface ModelRef {
   id: string
 }
 
+/** How hard a model should work, from fastest and cheapest to most thorough. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type Effort = (typeof EFFORT_LEVELS)[number]
+
+/** The strongest supported level that doesn't exceed the one asked for. */
+export function clampEffort(wanted: Effort, supported: readonly Effort[]): Effort | undefined {
+  const rank = EFFORT_LEVELS.indexOf(wanted)
+  return supported.filter((level) => EFFORT_LEVELS.indexOf(level) <= rank).at(-1) ?? supported[0]
+}
+
+/** US dollars per million tokens. */
+export interface ModelPricing {
+  input: number
+  output: number
+  cacheRead?: number
+}
+
 export interface ModelInfo extends ModelRef {
   label: string
   providerName: string
@@ -15,8 +32,25 @@ export interface ModelInfo extends ModelRef {
   maxOutput?: number
   /** The model can stream a readable summary of its reasoning. */
   thinking?: boolean
-  /** The model accepts an explicit effort level. */
-  effort?: boolean
+  /** Effort levels the model accepts, weakest first. */
+  efforts?: Effort[]
+  pricing?: ModelPricing
+  reasoning?: boolean
+  supportsTools?: boolean
+  imageInput?: boolean
+  released?: string
+  /** Measured on this computer, from this model's earlier answers. */
+  speed?: ModelSpeed
+}
+
+export interface ModelSpeed {
+  tokensPerSecond: number
+  firstTokenMs: number
+}
+
+export interface PlanItem {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
 }
 
 export interface Usage {
@@ -52,13 +86,22 @@ export interface ToolResultPart {
   /** Stopped by the user or by the permission mode, rather than failing. */
   denied?: boolean
 }
-export type Part = TextPart | ReasoningPart | ToolCallPart | ToolResultPart
+/** A file the user attached. The bytes live on disk under `ref`, and `data` is only filled in to send. */
+export interface AttachmentPart {
+  type: 'attachment'
+  name: string
+  mediaType: string
+  size: number
+  ref: string
+  data?: string
+}
+export type Part = TextPart | ReasoningPart | ToolCallPart | ToolResultPart | AttachmentPart
 
-export interface CouncilVoice {
-  model: ModelRef
-  text: string
-  usage?: Usage
-  error?: string
+/** A file on its way from the message box, as base64. */
+export interface OutgoingAttachment {
+  name: string
+  mediaType: string
+  data: string
 }
 
 export interface Message {
@@ -76,8 +119,6 @@ export interface Message {
    * what the canonical parts cannot: signed thinking and encrypted reasoning.
    */
   raw?: { provider: string; model: string; data: unknown }
-  /** Individual answers behind a council synthesis. Never replayed to models. */
-  council?: { voices: CouncilVoice[] }
   /** A refused turn is shown to the user but never replayed to any model. */
   excluded?: boolean
 }
@@ -95,6 +136,8 @@ export interface Thread {
   /** Tools the user allowed for the rest of this conversation. */
   allowedTools: string[]
   messages: Message[]
+  /** The task list the current model keeps while it works. Never sent back to models. */
+  plan?: PlanItem[]
 }
 
 export interface ThreadSummary {
@@ -128,30 +171,30 @@ export type SendRequest = {
   /** Empty means: run again from the last user message. */
   text: string
   permissionMode: PermissionMode
-} & ({ mode: 'agent'; model: ModelRef } | { mode: 'council'; model: ModelRef; voices: ModelRef[] })
-
-export type VoiceStatus = 'running' | 'done' | 'error'
-export interface LiveVoice {
-  key: string
+  /** Null or absent leaves the choice to the model's own default. */
+  effort?: Effort | null
+  /** Shown to the user when the run starts, such as why a model was chosen. */
+  note?: string
+  attachments?: OutgoingAttachment[]
   model: ModelRef
-  status: VoiceStatus
-  error?: string
 }
 
 export type UniEvent =
   | { type: 'thread'; thread: Thread }
   | { type: 'threads'; threads: ThreadSummary[] }
   | { type: 'run'; threadId: string; running: boolean }
-  | { type: 'delta'; threadId: string; stream: string; kind: 'text' | 'reasoning'; text: string }
-  | { type: 'reset'; threadId: string; stream: string }
-  | { type: 'council'; threadId: string; phase: 'voices' | 'synthesis' | 'done'; voices: LiveVoice[] }
+  | { type: 'delta'; threadId: string; kind: 'text' | 'reasoning'; text: string }
+  | { type: 'reset'; threadId: string }
   | { type: 'approval'; threadId: string; approval: ApprovalRequest }
   | { type: 'approval-done'; threadId: string; id: string }
   | { type: 'notice'; threadId: string; text: string }
   | { type: 'error'; threadId: string; text: string }
   | { type: 'mcp'; servers: McpStatus[] }
+  | { type: 'models-changed' }
 
-export const MAIN_STREAM = 'main'
+export const NEW_THREAD_TITLE = 'Nova conversa'
+/** The task list a model keeps while it works. The interface draws it instead of a tool row. */
+export const PLAN_TOOL = 'update_plan'
 
 export interface ProviderView {
   id: string
@@ -189,11 +232,100 @@ export interface McpStatus {
   tools: { name: string; description: string }[]
 }
 
+export interface GitFile {
+  path: string
+  /** Porcelain codes: the staged state and the working tree state. "." means unchanged. */
+  index: string
+  worktree: string
+  renamedFrom?: string
+  untracked?: boolean
+  conflicted?: boolean
+  /** A submodule inside this repository. Its own changes belong to its own repository. */
+  submodule?: boolean
+}
+
+/** A repository inside the project. `path` is relative to the project, and empty for its root. */
+export interface RepoRef {
+  path: string
+  name: string
+  kind: 'root' | 'submodule' | 'nested'
+}
+
+export interface ProjectRepos {
+  repos: RepoRef[]
+  /** Submodules declared by the root repository that haven't been downloaded. */
+  uninitializedSubmodules: string[]
+}
+
+export interface GitBranch {
+  name: string
+  current: boolean
+  remote: boolean
+}
+
+export interface GitCommit {
+  hash: string
+  subject: string
+  author: string
+  /** Seconds since the epoch. */
+  at: number
+}
+
+export interface GitStatus {
+  isRepo: boolean
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  hasRemote: boolean
+  files: GitFile[]
+  branches: GitBranch[]
+  commits: GitCommit[]
+}
+
+export type GitAction =
+  | { type: 'stage'; paths: string[] }
+  | { type: 'unstage'; paths: string[] }
+  | { type: 'discard'; paths: string[] }
+  | { type: 'commit'; message: string }
+  | { type: 'switch'; branch: string }
+  | { type: 'create-branch'; branch: string }
+  | { type: 'fetch' }
+  | { type: 'pull' }
+  | { type: 'push' }
+  | { type: 'init' }
+  | { type: 'init-submodules' }
+
+export interface PullRequest {
+  number: number
+  title: string
+  branch: string
+  url: string
+  author: string
+  draft: boolean
+  review: string | null
+}
+
+export interface PrListing {
+  /** False when the GitHub CLI isn't installed. */
+  available: boolean
+  prs: PullRequest[]
+  error?: string
+}
+
+export interface ProjectFile {
+  text: string
+  truncated: boolean
+  binary: boolean
+}
+
 export interface Preferences {
   memory: string
   lastModel: ModelRef | null
-  councilVoices: ModelRef[]
   permissionMode: PermissionMode
+  effort: Effort | null
+  /** Let Claudio choose the model for each message. */
+  autoModel: boolean
 }
 
 /** Everything the renderer may ask of the main process. Secrets only ever flow inward. */
@@ -234,6 +366,23 @@ export interface UniApi {
     add(json: string): Promise<McpStatus[]>
     remove(name: string): Promise<McpStatus[]>
     reconnect(name: string): Promise<McpStatus[]>
+  }
+  attachments: {
+    /** A data URL for showing a stored image. */
+    preview(ref: string): Promise<string | null>
+  }
+  project: {
+    repos(threadId: string): Promise<ProjectRepos>
+    git(threadId: string, repo: string): Promise<GitStatus>
+    act(threadId: string, repo: string, action: GitAction): Promise<GitStatus>
+    diff(threadId: string, repo: string, path: string, staged: boolean): Promise<string>
+    prs(threadId: string, repo: string): Promise<PrListing>
+    createPr(threadId: string, repo: string, input: { title: string; body: string }): Promise<string>
+    checkoutPr(threadId: string, repo: string, number: number): Promise<GitStatus>
+    /** Has a model read the changes and write the commit message. */
+    commitMessage(threadId: string, repo: string, model: ModelRef): Promise<string>
+    files(threadId: string): Promise<string[]>
+    read(threadId: string, path: string): Promise<ProjectFile>
   }
   system: {
     pickFolder(): Promise<string | null>

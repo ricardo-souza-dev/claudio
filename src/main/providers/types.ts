@@ -1,4 +1,4 @@
-import type { Message, ModelInfo, Part, Protocol, StopReason, Usage } from '../../shared/types'
+import type { Effort, Message, ModelInfo, Part, Protocol, StopReason, Usage } from '../../shared/types'
 
 /** A tool as every provider sees it: same name, description and schema everywhere. */
 export interface ToolSpec {
@@ -21,6 +21,8 @@ export interface CompletionRequest {
   tools: ToolSpec[]
   /** Replay the provider's own wire format when possible. Off when history is flattened to text. */
   replayRaw: boolean
+  /** Undefined uses the adapter's default. Null sends no effort setting at all. */
+  effort?: Effort | null
   signal: AbortSignal
 }
 
@@ -54,7 +56,8 @@ export class ProviderError extends Error {
   constructor(
     message: string,
     readonly status?: number,
-    readonly toolsUnsupported = false
+    readonly toolsUnsupported = false,
+    readonly effortUnsupported = false
   ) {
     super(message)
     this.name = 'ProviderError'
@@ -76,13 +79,17 @@ export function isAbort(error: unknown, signal: AbortSignal): boolean {
 
 const TOOLS_UNSUPPORTED = /(does not|doesn't|do not|not) (support|allow).{0,40}(tool|function)|(tool|function).{0,40}(not supported|unsupported|not available|not allowed)/i
 
+const EFFORT_REJECTED = /reasoning|effort|thinking.?(level|budget|config)/i
+
 /** Turns any SDK error into a message a person can act on. */
 export function describeError(error: unknown, providerName: string): ProviderError {
   if (error instanceof ProviderError) return error
   const e = error as { status?: number; code?: number; message?: string } | null
   const status = e?.status ?? (typeof e?.code === 'number' ? e.code : undefined)
   const detail = (e?.message ?? String(error)).trim()
-  const toolsUnsupported = status !== undefined && status >= 400 && status < 500 && TOOLS_UNSUPPORTED.test(detail)
+  const rejected = status !== undefined && status >= 400 && status < 500
+  const toolsUnsupported = rejected && TOOLS_UNSUPPORTED.test(detail)
+  const effortUnsupported = rejected && EFFORT_REJECTED.test(detail)
   const prefix: Record<number, string> = {
     401: `${providerName} recusou a chave de API. Confira em Ajustes.`,
     403: `${providerName} negou acesso a este modelo com a sua chave.`,
@@ -96,5 +103,5 @@ export function describeError(error: unknown, providerName: string): ProviderErr
     : undefined
   const summary = known ?? server ?? network
   const message = summary ? `${summary}\n${detail}` : `${providerName}: ${detail}`
-  return new ProviderError(message, status, toolsUnsupported)
+  return new ProviderError(message, status, toolsUnsupported, effortUnsupported)
 }

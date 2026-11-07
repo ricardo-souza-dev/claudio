@@ -29,6 +29,19 @@ const api: UniApi = {
   },
   chat: { send: call('chat.send'), stop: call('chat.stop'), respond: call('chat.respond') },
   mcp: { list: call('mcp.list'), add: call('mcp.add'), remove: call('mcp.remove'), reconnect: call('mcp.reconnect') },
+  attachments: { preview: call('attachments.preview') },
+  project: {
+    repos: call('project.repos'),
+    git: call('project.git'),
+    act: call('project.act'),
+    diff: call('project.diff'),
+    prs: call('project.prs'),
+    createPr: call('project.createPr'),
+    checkoutPr: call('project.checkoutPr'),
+    commitMessage: call('project.commitMessage'),
+    files: call('project.files'),
+    read: call('project.read')
+  },
   system: {
     pickFolder: call('system.pickFolder'),
     openExternal: call('system.openExternal'),

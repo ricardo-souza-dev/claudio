@@ -1,29 +1,28 @@
 import Ajv, { type ValidateFunction } from 'ajv'
 import {
-  MAIN_STREAM,
-  modelKey,
   type ApprovalDecision,
   type ApprovalRequest,
-  type CouncilVoice,
-  type LiveVoice,
+  type AttachmentPart,
+  type Effort,
   type Message,
   type ModelInfo,
   type ModelRef,
+  type OutgoingAttachment,
   type Part,
   type PermissionMode,
+  type PlanItem,
   type SendRequest,
   type Thread,
   type ToolCallPart,
   type ToolResultPart,
   type UniEvent
 } from '../../shared/types'
-import { flattenHistory, newId, textOf, toolCallsOf } from '../providers/history'
+import { flattenHistory, newId, toolCallsOf } from '../providers/history'
 import { AbortedError, ProviderError, type ProviderAdapter } from '../providers/types'
-import { permissionFor, type Tool } from '../tools/types'
+import { permissionFor, PLAN_TOOL, type Tool } from '../tools/types'
 import { buildSystemPrompt } from './context'
 
 const MAX_AGENT_STEPS = 40
-const MAX_VOICE_STEPS = 8
 const TITLE_LENGTH = 60
 
 export interface RunnerDeps {
@@ -33,6 +32,10 @@ export interface RunnerDeps {
   emit(event: UniEvent): void
   save(thread: Thread): Promise<void>
   requestApproval(threadId: string, request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision>
+  saveAttachments?(attachments: OutgoingAttachment[]): Promise<AttachmentPart[]>
+  loadAttachments?(messages: Message[], model: ModelInfo): Promise<Message[]>
+  /** Called after each answer, so time estimates come from how this model really performs here. */
+  recordSpeed?(ref: ModelRef, firstTokenMs: number, generatingMs: number, outputTokens: number): void
 }
 
 interface TurnOptions {
@@ -43,7 +46,7 @@ interface TurnOptions {
   tools: Tool[]
   replayRaw: boolean
   threadId: string
-  stream: string
+  effort?: Effort | null
   signal: AbortSignal
 }
 
@@ -95,12 +98,18 @@ export class Runner {
     deps.emit({ type: 'run', threadId: thread.id, running: true })
     try {
       const text = request.text.trim()
-      if (text) {
-        if (thread.messages.length === 0) thread.title = text.replace(/\s+/g, ' ').slice(0, TITLE_LENGTH)
+      const attachments = request.attachments?.length && deps.saveAttachments ? await deps.saveAttachments(request.attachments) : []
+      if (text || attachments.length > 0) {
+        if (thread.messages.length === 0) {
+          const title = text || attachments.map((part) => part.name).join(', ')
+          thread.title = title.replace(/\s+/g, ' ').slice(0, TITLE_LENGTH)
+        }
+        thread.plan = []
         thread.messages.push({
           id: newId('m_'),
           role: 'user',
-          parts: [{ type: 'text', text }],
+          // Files first: models read better with what they refer to already in view.
+          parts: [...attachments, ...(text ? [{ type: 'text' as const, text }] : [])],
           createdAt: Date.now()
         })
       } else if (thread.messages.at(-1)?.role === 'assistant' && !thread.messages.at(-1)?.excluded) {
@@ -114,12 +123,9 @@ export class Runner {
       thread.model = request.model
       this.publish(thread)
       await deps.save(thread)
+      if (request.note) deps.emit({ type: 'notice', threadId: thread.id, text: request.note })
 
-      if (request.mode === 'council') {
-        await this.runCouncil(thread, request.voices, request.model, controller.signal)
-      } else {
-        await this.runAgent(thread, request.model, request.permissionMode, controller.signal)
-      }
+      await this.runAgent(thread, request.model, request.permissionMode, request.effort, controller.signal)
     } catch (error) {
       if (!(error instanceof AbortedError) && !controller.signal.aborted) {
         deps.emit({ type: 'error', threadId: thread.id, text: (error as Error).message })
@@ -139,37 +145,45 @@ export class Runner {
 
   /** Streams one model turn. If the model turns out not to accept tools, reruns without them. */
   private async streamTurn(options: TurnOptions): Promise<{ parts: Part[]; result?: Awaited<ReturnType<ProviderAdapter['stream']>>; toolsDropped: boolean }> {
-    const { info, adapter, system, tools, threadId, stream, signal } = options
-    let { messages, replayRaw } = options
+    const { info, adapter, system, tools, threadId, signal } = options
+    let { messages, replayRaw, effort } = options
     let toolList = tools
     let toolsDropped = false
     for (;;) {
       let partialText = ''
       let partialReasoning = ''
+      const startedAt = Date.now()
+      let firstTokenAt: number | null = null
       try {
+        const loaded = this.deps.loadAttachments ? await this.deps.loadAttachments(messages, info) : messages
         const result = await adapter.stream(
           {
             model: info,
             system,
-            messages,
+            messages: loaded,
             tools: toolList.map(({ name, description, schema }) => ({ name, description, schema })),
             replayRaw,
+            effort,
             signal
           },
           (event) => {
             if (event.type === 'text' || event.type === 'reasoning') {
+              firstTokenAt ??= Date.now()
               if (event.type === 'text') partialText += event.text
               else partialReasoning += event.text
-              this.deps.emit({ type: 'delta', threadId, stream, kind: event.type, text: event.text })
+              this.deps.emit({ type: 'delta', threadId, kind: event.type, text: event.text })
             } else if (event.type === 'reset') {
               partialText = ''
               partialReasoning = ''
-              this.deps.emit({ type: 'reset', threadId, stream })
+              this.deps.emit({ type: 'reset', threadId })
             } else {
               this.deps.emit({ type: 'notice', threadId, text: event.text })
             }
           }
         )
+        if (firstTokenAt !== null && result.usage?.output) {
+          this.deps.recordSpeed?.(info, firstTokenAt - startedAt, Date.now() - firstTokenAt, result.usage.output)
+        }
         return { parts: result.parts, result, toolsDropped }
       } catch (error) {
         if (error instanceof AbortedError) {
@@ -183,8 +197,15 @@ export class Runner {
           toolsDropped = true
           messages = flattenHistory(messages)
           replayRaw = false
-          this.deps.emit({ type: 'reset', threadId, stream })
+          this.deps.emit({ type: 'reset', threadId })
           this.deps.emit({ type: 'notice', threadId, text: `${info.label} não aceita ferramentas. Seguiu só com texto.` })
+          continue
+        }
+        // Catalog data can be wrong about a model: the turn still matters more than the setting.
+        if (error instanceof ProviderError && error.effortUnsupported && effort !== null) {
+          effort = null
+          this.deps.emit({ type: 'reset', threadId })
+          this.deps.emit({ type: 'notice', threadId, text: `${info.label} não aceita ajuste de força. Seguiu com o padrão dele.` })
           continue
         }
         throw error
@@ -218,7 +239,7 @@ export class Runner {
     }
   }
 
-  private async runAgent(thread: Thread, ref: ModelRef, mode: PermissionMode, signal: AbortSignal): Promise<void> {
+  private async runAgent(thread: Thread, ref: ModelRef, mode: PermissionMode, effort: Effort | null | undefined, signal: AbortSignal): Promise<void> {
     const { adapter, info } = await this.deps.resolveModel(ref)
     const tools = [...this.deps.toolsFor(thread.workspace)].sort((a, b) => a.name.localeCompare(b.name))
     let turnTools = tools
@@ -232,7 +253,7 @@ export class Runner {
         tools: turnTools,
         replayRaw: true,
         threadId: thread.id,
-        stream: MAIN_STREAM,
+        effort: effort ?? undefined,
         signal
       })
       if (outcome.toolsDropped) turnTools = []
@@ -314,6 +335,7 @@ export class Runner {
       }
       if (decision === 'allow-always') thread.allowedTools.push(tool.name)
     }
+    if (tool.name === PLAN_TOOL) thread.plan = (input as { items: PlanItem[] }).items
     return this.run(tool, call, input, signal)
   }
 
@@ -332,141 +354,4 @@ export class Runner {
     return { type: 'tool_result', callId: call.id, name: call.name, content: output.content, ...(output.isError ? { isError: true } : {}) }
   }
 
-  /**
-   * Many models, one answer. Voices work apart from the thread, with read-only tools
-   * and no ability to change anything. Only the synthesis enters the history, so
-   * whichever model continues afterwards inherits a single voice.
-   */
-  private async runCouncil(thread: Thread, voices: ModelRef[], synthesizer: ModelRef, signal: AbortSignal): Promise<void> {
-    const threadId = thread.id
-    const live: LiveVoice[] = voices.map((model) => ({ key: modelKey(model), model, status: 'running' }))
-    const publishVoices = (phase: 'voices' | 'synthesis' | 'done'): void =>
-      this.deps.emit({ type: 'council', threadId, phase, voices: live.map((voice) => ({ ...voice })) })
-    publishVoices('voices')
-
-    const history = flattenHistory(thread.messages)
-    const readTools = this.deps.toolsFor(thread.workspace).filter((tool) => tool.readOnly)
-
-    const results: CouncilVoice[] = await Promise.all(
-      voices.map(async (model, index): Promise<CouncilVoice> => {
-        try {
-          const voice = await this.runVoice(thread, model, history, readTools, signal)
-          live[index].status = 'done'
-          publishVoices('voices')
-          return voice
-        } catch (error) {
-          const text = error instanceof AbortedError ? 'Interrompido' : (error as Error).message
-          live[index] = { ...live[index], status: 'error', error: text }
-          publishVoices('voices')
-          return { model, text: '', error: text }
-        }
-      })
-    )
-    if (signal.aborted) {
-      publishVoices('done')
-      throw new AbortedError()
-    }
-
-    const answered = results.filter((voice) => !voice.error && voice.text.trim())
-    if (answered.length === 0) {
-      publishVoices('done')
-      throw new Error(`Nenhum modelo do conselho respondeu.\n${results.map((voice) => voice.error).filter(Boolean).join('\n')}`)
-    }
-
-    if (answered.length === 1) {
-      // Nothing to reconcile: use the only answer as it is, without paying for a synthesis.
-      thread.messages.push({
-        id: newId('m_'),
-        role: 'assistant',
-        parts: [{ type: 'text', text: answered[0].text }],
-        createdAt: Date.now(),
-        model: answered[0].model,
-        usage: answered[0].usage,
-        stop: 'end',
-        council: { voices: results }
-      })
-      publishVoices('done')
-      return
-    }
-
-    publishVoices('synthesis')
-    const { adapter, info } = await this.deps.resolveModel(synthesizer)
-    const outcome = await this.streamTurn({
-      info,
-      adapter,
-      system: thread.system!,
-      messages: [...history, councilBrief(answered)],
-      tools: [],
-      replayRaw: false,
-      threadId,
-      stream: MAIN_STREAM,
-      signal
-    })
-    const message = this.assistantMessage(outcome, synthesizer, threadId, false)
-    message.council = { voices: results }
-    if (outcome.parts.length > 0 || outcome.result) thread.messages.push(message)
-    publishVoices('done')
-  }
-
-  private async runVoice(thread: Thread, ref: ModelRef, history: Message[], tools: Tool[], signal: AbortSignal): Promise<CouncilVoice> {
-    const { adapter, info } = await this.deps.resolveModel(ref)
-    const messages = [...history]
-    const usage = { input: 0, output: 0 }
-    for (let step = 0; step < MAX_VOICE_STEPS; step++) {
-      const outcome = await this.streamTurn({
-        info,
-        adapter,
-        system: thread.system!,
-        messages,
-        tools,
-        replayRaw: false,
-        threadId: thread.id,
-        stream: modelKey(ref),
-        signal
-      })
-      const { result } = outcome
-      if (!result) throw new AbortedError()
-      usage.input += result.usage?.input ?? 0
-      usage.output += result.usage?.output ?? 0
-      if (result.stop === 'refusal') throw new Error(`${info.label} recusou este pedido.`)
-
-      const message = this.assistantMessage(outcome, ref, thread.id, false)
-      messages.push(message)
-      const calls = toolCallsOf(message)
-      if (calls.length === 0 || outcome.toolsDropped || result.stop === 'length') {
-        return { model: message.model ?? ref, text: textOf(outcome.parts), usage }
-      }
-      const parts: ToolResultPart[] = []
-      for (const call of calls) {
-        const checked = this.checkCall(call, tools)
-        if ('error' in checked) {
-          parts.push(this.errorResult(call, checked.error))
-        } else if (checked.tool.risk(checked.input) !== 'read') {
-          // A voice has nobody to ask, so anything beyond a plain read is refused.
-          parts.push(this.errorResult(call, 'Bloqueado: no conselho só é possível ler arquivos comuns.'))
-        } else {
-          parts.push(await this.run(checked.tool, call, checked.input, signal))
-        }
-      }
-      messages.push({ id: newId('m_'), role: 'tool', parts, createdAt: Date.now() })
-    }
-    throw new Error(`${info.label} excedeu o limite de passos no conselho.`)
-  }
-}
-
-function councilBrief(voices: CouncilVoice[]): Message {
-  const answers = voices
-    .map((voice) => `<answer model="${modelKey(voice.model)}">\n${voice.text.trim()}\n</answer>`)
-    .join('\n\n')
-  return {
-    id: newId('m_'),
-    role: 'user',
-    createdAt: Date.now(),
-    parts: [
-      {
-        type: 'text',
-        text: `Several models answered my last message independently:\n\n${answers}\n\nWrite the single final answer to me, in the language I wrote in. Keep what is right and correct what is wrong. Where the answers disagree on something that matters, say so and say which view you favor and why. Do not describe this process, and do not name the models unless a disagreement requires it.`
-      }
-    ]
-  }
 }

@@ -7,9 +7,10 @@
   "main": "out/main/index.js",
   "scripts": {
     "postinstall": "install-electron",
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "electron-vite build && playwright test"

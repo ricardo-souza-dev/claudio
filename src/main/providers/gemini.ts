@@ -1,6 +1,6 @@
 import { GoogleGenAI, type Content, type Part as GeminiPart } from '@google/genai'
-import type { Message, ModelInfo, Part, StopReason } from '../../shared/types'
-import { contextOf, generatedCallId, replayable, toolResultsOf } from './history'
+import { clampEffort, type Effort, type Message, type ModelInfo, type Part, type StopReason } from '../../shared/types'
+import { attachmentAsText, contextOf, generatedCallId, isImage, isPdf, replayable, toolResultsOf } from './history'
 import {
   AbortedError,
   describeError,
@@ -110,6 +110,10 @@ export function toGeminiContents(messages: Message[], target: ModelInfo, replayR
     const parts: GeminiPart[] = []
     for (const part of message.parts) {
       if (part.type === 'text' && part.text) parts.push({ text: part.text })
+      if (part.type === 'attachment' && part.data) {
+        if (isImage(part) || isPdf(part)) parts.push({ inlineData: { mimeType: part.mediaType, data: part.data } })
+        else parts.push({ text: attachmentAsText(part) })
+      }
       if (part.type === 'tool_call') {
         parts.push({
           functionCall: { name: part.name, args: (part.input ?? {}) as Record<string, unknown> },
@@ -120,6 +124,16 @@ export function toGeminiContents(messages: Message[], target: ModelInfo, replayR
     push(message.role === 'user' ? 'user' : 'model', parts)
   }
   return contents
+}
+
+const THINKING_BUDGETS: Record<Effort, number> = { low: 1024, medium: 8192, high: 24576, xhigh: 24576, max: 24576 }
+
+/** Newer models take a thinking level and reject the older token budget, and the reverse holds too. */
+function thinkingConfigOf(model: ModelInfo, requested: Effort | null | undefined) {
+  const level = requested && model.efforts?.length ? clampEffort(requested, model.efforts) : undefined
+  if (!model.thinking && !level) return {}
+  const depth = level ? (acceptsForeignSignature(model.id) ? { thinkingLevel: level.toUpperCase() } : { thinkingBudget: THINKING_BUDGETS[level] }) : {}
+  return { thinkingConfig: { ...(model.thinking ? { includeThoughts: true } : {}), ...depth } as never }
 }
 
 function stopOf(finish: string | undefined, blocked: boolean, hasCalls: boolean): StopReason {
@@ -155,7 +169,7 @@ export function createGeminiAdapter(connection: ProviderConnection): ProviderAda
         systemInstruction: system,
         abortSignal: signal,
         ...(tools.length > 0 ? { tools: [{ functionDeclarations: tools.map(declarationOf) }] } : {}),
-        ...(model.thinking ? { thinkingConfig: { includeThoughts: true } } : {})
+        ...thinkingConfigOf(model, request.effort)
       }
     })
 

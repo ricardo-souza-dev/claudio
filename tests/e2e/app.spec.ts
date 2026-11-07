@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -10,10 +11,10 @@ let dataDir: string
 let workspace: string
 const running: { app: ElectronApplication; page: Page; problems: string[] }[] = []
 
-async function launch(): Promise<{ app: ElectronApplication; page: Page; problems: string[] }> {
+async function launch(extraEnv: Record<string, string> = {}): Promise<{ app: ElectronApplication; page: Page; problems: string[] }> {
   const app = await electron.launch({
     args: [path.resolve('out/main/index.js')],
-    env: { ...process.env, CLAUDIO_DATA_DIR: dataDir } as Record<string, string>
+    env: { ...process.env, CLAUDIO_DATA_DIR: dataDir, CLAUDIO_MODEL_FACTS_URL: `${llm.url}/facts.json`, ...extraEnv } as Record<string, string>
   })
   const page = await app.firstWindow()
   const problems: string[] = []
@@ -41,7 +42,7 @@ async function seedProviders(): Promise<void> {
         { id: 'custom-g', name: 'Google', protocol: 'gemini', baseUrl: `${llm.url}/gemini` },
         { id: 'custom-c', name: 'Compatível', protocol: 'openai-chat', baseUrl: `${llm.url}/compat/v1` }
       ],
-      prefs: { memory: 'Prefiro respostas curtas.', lastModel: null, councilVoices: [], permissionMode: 'ask' }
+      prefs: { memory: 'Prefiro respostas curtas.', lastModel: null, permissionMode: 'ask' }
     })
   )
 }
@@ -51,7 +52,7 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 async function send(page: Page, text: string): Promise<void> {
-  const box = page.getByLabel('Mensagem')
+  const box = page.getByLabel('Mensagem', { exact: true })
   await box.fill(text)
   await box.press('Enter')
 }
@@ -66,7 +67,20 @@ async function pickModel(page: Page, query: string): Promise<void> {
   await expect(page.getByRole('dialog')).toHaveCount(0)
 }
 
-const idle = (page: Page) => expect(page.getByRole('button', { name: 'Enviar' })).toBeVisible({ timeout: 20_000 })
+/** Answers the system's folder dialog with this folder from now on. */
+async function answerFolderDialog(app: ElectronApplication, folder: string): Promise<void> {
+  await app.evaluate(({ dialog }, chosen) => {
+    ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [chosen] })
+  }, folder)
+}
+
+async function openProject(app: ElectronApplication, page: Page): Promise<void> {
+  await answerFolderDialog(app, workspace)
+  await page.getByRole('button', { name: 'Escolher a pasta do projeto' }).click()
+  await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
+}
+
+const idle = (page: Page) => expect(page.getByRole('button', { name: 'Enviar', exact: true })).toBeVisible({ timeout: 20_000 })
 
 test.beforeAll(async () => {
   llm = await startMockLlm()
@@ -75,6 +89,7 @@ test.afterAll(() => llm.close())
 test.beforeEach(async () => {
   dataDir = await mkdtemp(path.join(tmpdir(), 'uni-e2e-data-'))
   workspace = await mkdtemp(path.join(tmpdir(), 'uni-e2e-work-'))
+  execFileSync('git', ['init', '-q'], { cwd: workspace })
   llm.requests.length = 0
 })
 test.afterEach(async ({}, testInfo) => {
@@ -103,9 +118,41 @@ test.afterEach(async ({}, testInfo) => {
 test('first run: locked-down renderer, empty state, connecting a provider through the UI', async () => {
   const { app, page, problems } = await launch()
 
-  await expect(page.getByRole('heading', { name: 'Uma conversa. Qualquer modelo.' })).toBeVisible()
+  // Nothing happens outside a project: there is no message box yet, and the main process refuses too.
+  await expect(page.getByRole('heading', { name: 'Em qual projeto vamos trabalhar?' })).toBeVisible()
+  await expect(page.getByLabel('Mensagem', { exact: true })).toHaveCount(0)
+  await shot(page, '00-escolher-projeto')
+  const refused = await page.evaluate(async () => {
+    const uni = (window as any).uni
+    const [summary] = await uni.threads.list()
+    return uni.chat
+      .send({ threadId: summary.id, text: 'oi', mode: 'agent', model: { provider: 'x', id: 'y' }, permissionMode: 'ask' })
+      .then(() => 'aceitou')
+      .catch((error: Error) => error.message)
+  })
+  expect(refused).toContain('precisa de um projeto')
+
+  // A folder that no longer exists is refused, with the reason in place.
+  await answerFolderDialog(app, path.join(workspace, 'nao-existe'))
+  await page.getByRole('button', { name: 'Escolher a pasta do projeto' }).click()
+  await expect(page.getByRole('alert')).toContainText('A pasta não existe')
+  await expect(page.getByLabel('Mensagem', { exact: true })).toHaveCount(0)
+
+  // A subfolder opens the whole repository, because the context is the project.
+  const subfolder = path.join(workspace, 'src', 'interno')
+  await mkdir(subfolder, { recursive: true })
+  await answerFolderDialog(app, subfolder)
+  await page.getByRole('button', { name: 'Escolher a pasta do projeto' }).click()
+  await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
+  await expect(page.locator('.context-chip.action')).toContainText(path.basename(workspace))
+
   await expect(page.getByRole('button', { name: 'Conectar o primeiro provedor' })).toBeVisible()
   await shot(page, '01-primeira-abertura')
+
+  // The icon the window asks for loads, in the format this system uses.
+  const iconFile = path.resolve('resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
+  const icon = await app.evaluate(({ nativeImage }, file) => nativeImage.createFromPath(file).isEmpty(), iconFile)
+  expect(icon).toBe(false)
 
   // The page has the narrow bridge and nothing else.
   const surface = await page.evaluate(() => ({
@@ -127,6 +174,14 @@ test('first run: locked-down renderer, empty state, connecting a provider throug
   await expect(page.getByRole('heading', { name: 'Provedores' })).toBeVisible()
   await shot(page, '02-provedores')
 
+  // There is always a visible way back, and Esc works too.
+  await page.getByRole('button', { name: 'Voltar à conversa' }).click()
+  await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
+  await page.getByRole('button', { name: 'Conectar o primeiro provedor' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('heading', { name: 'Provedores' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Conectar o primeiro provedor' }).click()
+
   // A bad address is reported in place.
   await page.getByLabel('Nome').fill('Teste')
   await page.getByPlaceholder('https://exemplo.com/v1').fill('ftp://errado')
@@ -147,7 +202,8 @@ test('first run: locked-down renderer, empty state, connecting a provider throug
   await page.getByRole('button', { name: /^Teste/ }).click()
   await page.getByRole('button', { name: 'Testar conexão' }).click()
   await expect(page.getByText(/Conectado: \d+ modelos/)).toBeVisible()
-  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Começar a conversar' }).click()
+  await expect(page.getByRole('heading', { name: 'Provedores' })).toHaveCount(0)
 
   // The saved key really reaches the provider.
   await pickModel(page, 'chat-mock')
@@ -161,7 +217,9 @@ test('first run: locked-down renderer, empty state, connecting a provider throug
 
 test('one thread through four providers, with markdown rendered safely', async () => {
   await seedProviders()
+  await writeFile(path.join(workspace, 'README.md'), 'Sobre o projeto de teste.')
   const { app, page, problems } = await launch()
+  await openProject(app, page)
 
   await pickModel(page, 'Claude Simulado')
   await send(page, 'Primeira pergunta: como organizo este projeto?')
@@ -184,6 +242,12 @@ test('one thread through four providers, with markdown rendered safely', async (
   await expect(page.locator('.markdown strong', { hasText: 'negrito' })).toBeVisible({ timeout: 15_000 })
   await idle(page)
   await expect(page.getByText('assumiu aqui')).toHaveCount(3)
+
+  // Every provider started from the same project context.
+  expect(llm.last('anthropic')!.body.system).toContain('Sobre o projeto de teste.')
+  expect(llm.last('openai-responses')!.body.instructions).toBe(llm.last('anthropic')!.body.system)
+  expect(llm.last('gemini')!.body.systemInstruction.parts[0].text).toBe(llm.last('anthropic')!.body.system)
+  expect(llm.last('openai-chat')!.body.messages[0].content).toBe(llm.last('anthropic')!.body.system)
 
   // Each provider got the others' words.
   expect(JSON.stringify(llm.last('openai-chat')!.body.messages)).toContain('[gemini]')
@@ -225,19 +289,15 @@ test('agent: asks before acting, edits files, runs commands, and can be interrup
   await seedProviders()
   await writeFile(path.join(workspace, 'AGENTS.md'), 'Sempre escreva testes.')
   const { app, page, problems } = await launch()
-  await app.evaluate(({ dialog }, folder) => {
-    ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [folder] })
-  }, workspace)
-
-  await page.getByRole('button', { name: 'Sem pasta' }).click()
-  await expect(page.getByRole('button', { name: path.basename(workspace) })).toBeVisible()
+  await openProject(app, page)
+  await expect(page.locator('.context-chip.action')).toContainText(path.basename(workspace))
   await pickModel(page, 'Claude Simulado')
 
   // Denied: nothing is written.
   await send(page, 'ferramenta: write_file {"path":"negado.txt","content":"não"}')
   await expect(page.getByText('Alterar este arquivo?')).toBeVisible({ timeout: 15_000 })
   // The card never takes focus: an Enter meant for the message box can't approve anything.
-  await expect(page.getByLabel('Mensagem')).toBeFocused()
+  await expect(page.getByLabel('Mensagem', { exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.getByText('Alterar este arquivo?')).toBeVisible()
   await page.getByRole('button', { name: 'Negar' }).click()
@@ -307,74 +367,18 @@ test('agent: asks before acting, edits files, runs commands, and can be interrup
   await app.close()
 })
 
-test('council: voices stream side by side and close into one answer', async () => {
-  await seedProviders()
-  const { app, page, problems } = await launch()
-
-  await pickModel(page, 'Claude Simulado')
-  await page.getByRole('radio', { name: 'Conselho' }).click()
-  await expect(page.getByRole('button', { name: 'Enviar' })).toBeDisabled()
-
-  await page.getByRole('button', { name: 'Vozes' }).click()
-  const dialog = page.getByRole('dialog')
-  for (const name of ['gpt-mock', 'Gemini Simulado', 'chat-mock']) {
-    await dialog.getByRole('button', { name, exact: false }).first().click()
-  }
-  await shot(page, '07-escolha-de-vozes')
-  await dialog.getByRole('button', { name: /Concluir \(3\)/ }).click()
-
-  await send(page, 'Qual caminho devo seguir?')
-  await expect(page.locator('.council-chips')).toBeVisible({ timeout: 20_000 })
-  await idle(page)
-  await expect(page.locator('.council-count')).toHaveText('3 vozes')
-  await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[anthropic]')
-  await shot(page, '08-conselho')
-
-  // Each voice stays available to read.
-  await page.locator('.council-chips .chip', { hasText: 'Gemini Simulado' }).click()
-  await expect(page.locator('.council-voice')).toContainText('[gemini]')
-  await shot(page, '09-voz-aberta')
-
-  // The next model inherits one voice.
-  await page.getByRole('radio', { name: 'Agente' }).click()
-  await pickModel(page, 'chat-mock')
-  await send(page, 'E agora?')
-  await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[openai-chat]', { timeout: 15_000 })
-  await idle(page)
-  const history = JSON.stringify(llm.last('openai-chat')!.body.messages)
-  expect(history).toContain('[anthropic]')
-  expect(history).not.toContain('Several models answered')
-
-  expect(problems).toEqual([])
-  await app.close()
-})
-
-test('council shows voices live while they are still answering', async () => {
-  await seedProviders()
-  const { app, page } = await launch()
-  await pickModel(page, 'Claude Simulado')
-  await page.getByRole('radio', { name: 'Conselho' }).click()
-  await page.getByRole('button', { name: 'Vozes' }).click()
-  const dialog = page.getByRole('dialog')
-  for (const name of ['gpt-mock', 'chat-mock', 'Gemini Simulado']) await dialog.getByRole('button', { name }).first().click()
-  await dialog.getByRole('button', { name: /Concluir/ }).click()
-
-  await send(page, 'lento')
-  await expect(page.locator('.council-live .voice')).toHaveCount(3, { timeout: 15_000 })
-  await expect(page.locator('.voice .markdown').first()).toBeVisible({ timeout: 10_000 })
-  await shot(page, '10-conselho-ao-vivo')
-  await page.getByRole('button', { name: 'Interromper' }).click()
-  await idle(page)
-  await expect(page.locator('.council-live')).toHaveCount(0)
-  await app.close()
-})
-
 test('MCP: a real server becomes available to any model, with approval', async () => {
   await seedProviders()
   const { app, page, problems } = await launch()
+  await openProject(app, page)
 
   await page.getByRole('button', { name: 'Ajustes' }).click()
   await page.getByRole('button', { name: 'Ferramentas MCP' }).click()
+
+  // One click fills in a browser server, and says what it means for the user's accounts.
+  await page.getByRole('button', { name: 'Chrome (seus logins)' }).click()
+  await expect(page.getByLabel('Configuração MCP em JSON')).toHaveValue(/@playwright\/mcp@latest/)
+  await expect(page.locator('.preset-note')).toContainText('o modelo agirá nas suas contas')
 
   // Malformed input is explained, not swallowed.
   await page.getByLabel('Configuração MCP em JSON').fill('{ quebrado')
@@ -417,6 +421,7 @@ test('MCP: a real server becomes available to any model, with approval', async (
 test('failures: a provider error offers another way forward; refusals stay out of context', async () => {
   await seedProviders()
   const { app, page } = await launch()
+  await openProject(app, page)
   await pickModel(page, 'chat-mock')
 
   await send(page, 'falhe')
@@ -446,18 +451,523 @@ test('failures: a provider error offers another way forward; refusals stay out o
   await app.close()
 })
 
+test('project panel: changes, diff, commit, branches, pull requests and files', async () => {
+  await seedProviders()
+  const repo = (...args: string[]) => execFileSync('git', ['-C', workspace, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  repo('checkout', '-q', '-b', 'principal')
+  repo('config', 'user.name', 'Teste')
+  repo('config', 'user.email', 'teste@example.com')
+  repo('config', 'commit.gpgsign', 'false')
+  await writeFile(path.join(workspace, 'README.md'), 'um\n')
+  await mkdir(path.join(workspace, 'src'))
+  await writeFile(path.join(workspace, 'src', 'a.ts'), 'export const a = 1\n')
+  repo('add', '.')
+  repo('commit', '-q', '-m', 'Primeiro commit')
+  const remote = await mkdtemp(path.join(tmpdir(), 'uni-e2e-remoto-'))
+  execFileSync('git', ['init', '-q', '--bare', remote])
+  repo('remote', 'add', 'origin', remote)
+
+  const { app, page, problems } = await launch({ CLAUDIO_GH_COMMAND: JSON.stringify([process.execPath, path.resolve('tests/fixtures/fake-gh.mjs')]) })
+  await openProject(app, page)
+  const panel = page.getByRole('complementary', { name: /^Projeto/ })
+  await expect(panel.getByLabel('Branch', { exact: true })).toHaveValue('principal')
+  await expect(panel.getByText('Nada alterado.')).toBeVisible()
+  await expect(panel.getByText('Primeiro commit')).toBeVisible()
+
+  // Pull requests come from the GitHub CLI.
+  await expect(panel.getByText('Corrige o login')).toBeVisible()
+  await expect(panel.getByText('aprovado')).toBeVisible()
+  await expect(panel.locator('.pr-tag', { hasText: 'rascunho' })).toBeVisible()
+
+  // Changes appear, with their diff.
+  await writeFile(path.join(workspace, 'README.md'), 'um\ndois\n')
+  await writeFile(path.join(workspace, 'novo.txt'), 'novo\n')
+  await panel.getByRole('button', { name: 'Atualizar painel' }).click()
+  await expect(panel.locator('.git-file')).toHaveCount(2)
+  await expect(panel.getByRole('tab', { name: /Git/ })).toContainText('2')
+  await shot(page, '24-painel-git')
+  await panel.locator('.git-file-open', { hasText: 'README.md' }).click()
+  await expect(page.locator('.viewer-line.add')).toHaveText('+dois')
+  await shot(page, '25-diff')
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.viewer')).toHaveCount(0)
+
+  // Discarding takes a second click.
+  await panel.locator('.git-file', { hasText: 'novo.txt' }).hover()
+  await panel.getByRole('button', { name: 'Descartar alterações em novo.txt' }).click()
+  await panel.getByRole('button', { name: 'Confirmar: descartar alterações em novo.txt' }).click()
+  await expect(panel.locator('.git-file')).toHaveCount(1)
+  await expect(readFile(path.join(workspace, 'novo.txt'))).rejects.toThrow()
+
+  // Prepare and commit.
+  await expect(panel.getByRole('button', { name: 'Fazer commit' })).toBeDisabled()
+  await panel.getByRole('button', { name: 'Preparar todas' }).click()
+  await expect(panel.getByRole('heading', { name: 'Preparadas (1)' })).toBeVisible()
+
+  // A model reads what is staged and writes the message.
+  await pickModel(page, 'chat-mock')
+  await writeFile(path.join(workspace, '.env'), 'SENHA=segredo-do-env\n')
+  await panel.getByRole('button', { name: 'Atualizar painel' }).click()
+  await expect(panel.locator('.git-file', { hasText: '.env' })).toBeVisible()
+  await panel.getByRole('button', { name: 'Gerar mensagem do commit com IA' }).click()
+  await expect(panel.getByLabel('Texto do commit')).toHaveValue(/^feat\(painel\): adiciona a segunda linha/)
+  await shot(page, '32-mensagem-gerada')
+  const asked = JSON.stringify(llm.last('openai-chat')!.body.messages)
+  expect(asked).toContain('+dois')
+  expect(asked).toContain('Primeiro commit')
+  expect(asked).not.toContain('segredo-do-env')
+  await rm(path.join(workspace, '.env'))
+
+  await panel.getByRole('button', { name: 'Fazer commit' }).click()
+  await expect(panel.locator('.commit-subject').first()).toHaveText('feat(painel): adiciona a segunda linha')
+  await expect(panel.getByRole('heading', { name: 'Preparadas (0)' })).toBeVisible()
+  await expect(panel.getByLabel('Texto do commit')).toHaveValue('')
+  expect(repo('log', '-1', '--format=%s')).toBe('feat(painel): adiciona a segunda linha')
+  expect(repo('log', '-1', '--format=%b')).toContain('Mostra o que mudou no README.')
+
+  // New branch, then publish it.
+  await panel.getByRole('button', { name: 'Nova branch' }).click()
+  await panel.getByLabel('Nome da nova branch').fill('nome inválido')
+  await panel.getByLabel('Nome da nova branch').press('Enter')
+  await expect(panel.getByRole('alert')).toContainText('inválido')
+  await panel.getByLabel('Nome da nova branch').fill('recurso/painel')
+  await panel.getByLabel('Nome da nova branch').press('Enter')
+  await expect(panel.getByLabel('Branch', { exact: true })).toHaveValue('recurso/painel')
+  expect(repo('branch', '--show-current')).toBe('recurso/painel')
+  await expect(panel.getByText('Só local')).toBeVisible()
+  await panel.getByRole('button', { name: 'Push', exact: true }).click()
+  await expect(panel.getByText('Só local')).toHaveCount(0)
+  expect(repo('rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/recurso/painel')
+
+  // Back to the first branch from the list.
+  await panel.getByLabel('Branch', { exact: true }).selectOption('principal')
+  await expect(panel.getByLabel('Branch', { exact: true })).toHaveValue('principal')
+  expect(repo('branch', '--show-current')).toBe('principal')
+
+  // Files the agent writes show up as soon as it finishes.
+  await send(page, 'ferramenta: write_file {"path":"src/feito-pelo-agente.ts","content":"export {}"}')
+  await page.getByRole('button', { name: 'Permitir', exact: true }).click({ timeout: 15_000 })
+  await expect(panel.locator('.git-file', { hasText: 'feito-pelo-agente.ts' })).toBeVisible({ timeout: 15_000 })
+
+  // File tree, with what changed marked, and a filter.
+  await panel.getByRole('tab', { name: 'Arquivos' }).click()
+  await expect(panel.locator('.tree-row', { hasText: 'README.md' })).toBeVisible()
+  await panel.locator('.tree-row', { hasText: 'src' }).click()
+  await expect(panel.locator('.tree-row', { hasText: 'feito-pelo-agente.ts' }).locator('.git-code')).toHaveText('U')
+  await shot(page, '26-painel-arquivos')
+  await panel.getByLabel('Filtrar arquivos').fill('a.ts')
+  await expect(panel.locator('.tree-row')).toHaveCount(1)
+  await panel.locator('.tree-row').click()
+  await expect(page.locator('.viewer-text')).toHaveText('export const a = 1\n')
+  await page.keyboard.press('Escape')
+
+  // The panel can get out of the way.
+  await page.getByRole('button', { name: 'Fechar painel do projeto' }).click()
+  await expect(panel).toHaveCount(0)
+  await page.getByRole('button', { name: 'Abrir painel do projeto' }).click()
+  await expect(panel).toBeVisible()
+
+  expect(problems).toEqual([])
+  await app.close()
+  await rm(remote, { recursive: true, force: true }).catch(() => undefined)
+})
+
+test('a project with several repositories: each one with its own branch and commit', async () => {
+  await seedProviders()
+  const inRepo = (folder: string, ...args: string[]) => execFileSync('git', ['-C', folder, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  const seed = async (folder: string, branch: string): Promise<void> => {
+    await mkdir(folder, { recursive: true })
+    inRepo(folder, 'init', '-q', '-b', branch)
+    inRepo(folder, 'config', 'user.name', 'Teste')
+    inRepo(folder, 'config', 'user.email', 'teste@example.com')
+    inRepo(folder, 'config', 'commit.gpgsign', 'false')
+    await writeFile(path.join(folder, 'base.txt'), `${branch}\n`)
+    inRepo(folder, 'add', '.')
+    inRepo(folder, 'commit', '-q', '-m', `Início de ${branch}`)
+  }
+  await rm(path.join(workspace, '.git'), { recursive: true, force: true })
+  const api = path.join(workspace, 'api')
+  const web = path.join(workspace, 'web')
+  await seed(api, 'principal-api')
+  await seed(web, 'principal-web')
+
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  const panel = page.getByRole('complementary', { name: /^Projeto/ })
+  const apiBlock = panel.getByRole('region', { name: 'Repositório api' })
+  const webBlock = panel.getByRole('region', { name: 'Repositório web' })
+  await expect(apiBlock.locator('.repo-branch')).toHaveText('principal-api')
+  await expect(webBlock.locator('.repo-branch')).toHaveText('principal-web')
+  await expect(panel.getByText('Este projeto não usa Git.')).toHaveCount(0)
+
+  // A change counts in the block of the repository it belongs to.
+  await writeFile(path.join(web, 'base.txt'), 'alterado\n')
+  await panel.getByRole('button', { name: 'Atualizar painel' }).click()
+  await expect(webBlock.locator('.repo-head .panel-count')).toHaveText('1')
+  await expect(apiBlock.locator('.repo-head .panel-count')).toHaveCount(0)
+  await expect(panel.getByRole('tab', { name: /Git/ })).toContainText('1')
+
+  // Its commit stays in that repository.
+  await webBlock.locator('.repo-head').click()
+  await webBlock.getByRole('button', { name: 'Preparar todas' }).click()
+  await webBlock.getByLabel('Texto do commit').fill('Muda o web')
+  await webBlock.getByRole('button', { name: 'Fazer commit' }).click()
+  await expect(webBlock.locator('.commit-subject').first()).toHaveText('Muda o web')
+  expect(inRepo(web, 'log', '-1', '--format=%s')).toBe('Muda o web')
+  expect(inRepo(api, 'log', '-1', '--format=%s')).toBe('Início de principal-api')
+  await shot(page, '28-varios-repositorios')
+
+  // The file tree covers them all.
+  await panel.getByRole('tab', { name: 'Arquivos' }).click()
+  await panel.getByLabel('Filtrar arquivos').fill('base.txt')
+  await expect(panel.locator('.tree-row')).toHaveCount(2)
+
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('a project without Git works normally, and can start using it', async () => {
+  await seedProviders()
+  const plain = await mkdtemp(path.join(tmpdir(), 'uni-e2e-sem-git-'))
+  await writeFile(path.join(plain, 'notas.txt'), 'sem controle de versão')
+  const { app, page, problems } = await launch()
+  await answerFolderDialog(app, plain)
+  await page.getByRole('button', { name: 'Escolher a pasta do projeto' }).click()
+  await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
+  await expect(page.locator('.context-chip.action')).toContainText(path.basename(plain))
+
+  const panel = page.getByRole('complementary', { name: /^Projeto/ })
+  await expect(panel.getByText('Este projeto não usa Git.')).toBeVisible()
+  await expect(panel.getByRole('tab', { name: /Git/ })).toHaveCount(0)
+  await expect(panel.locator('.tree-row', { hasText: 'notas.txt' })).toBeVisible()
+  await shot(page, '27-sem-git')
+
+  // The agent works here just the same.
+  await pickModel(page, 'chat-mock')
+  await send(page, 'ferramenta: read_file {"path":"notas.txt"}')
+  await expect(page.locator('.tool-row', { hasText: 'read_file' })).toBeVisible({ timeout: 15_000 })
+  await idle(page)
+  expect(JSON.stringify(llm.last('openai-chat')!.body.messages)).toContain('sem controle de versão')
+
+  await panel.getByRole('button', { name: 'Iniciar Git' }).click()
+  await expect(panel.getByRole('tab', { name: /Git/ })).toBeVisible()
+  await expect(panel.getByText('Este projeto não usa Git.')).toHaveCount(0)
+
+  expect(problems).toEqual([])
+  await app.close()
+  await rm(plain, { recursive: true, force: true }).catch(() => undefined)
+})
+
+test('while working: context, tokens, strength of the model, task list and queue', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await pickModel(page, 'Claude Simulado')
+
+  // The strength of the model reaches the provider.
+  await page.getByLabel('Força do modelo').selectOption('xhigh')
+  await send(page, 'Primeira pergunta')
+  await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[anthropic]', { timeout: 15_000 })
+  await idle(page)
+  expect(llm.last('anthropic')!.body.output_config).toEqual({ effort: 'xhigh' })
+
+  // A model that takes no strength setting offers no choice.
+  await pickModel(page, 'chat-mock')
+  await expect(page.getByLabel('Força do modelo')).toHaveCount(0)
+  await pickModel(page, 'Claude Simulado')
+
+  // Context, limits, tokens and cost are one click away, including limits the provider API doesn't report.
+  await page.locator('.meter-button').click()
+  const panel = page.locator('.meter-panel')
+  await expect(panel).toContainText('Contexto em uso')
+  await expect(panel).toContainText('de 200 mil')
+  await expect(panel).toContainText('32 mil tokens')
+  await expect(panel).toContainText('Extra')
+  await expect(panel).toContainText('US$')
+  await shot(page, '20-uso-da-conversa')
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
+
+  // The task list stays in sight, and isn't repeated as a tool in the transcript.
+  await send(page, 'ferramenta: update_plan {"items":[{"content":"Ler o código","status":"completed"},{"content":"Corrigir o erro","status":"in_progress"},{"content":"Rodar os testes","status":"pending"}]}')
+  await expect(page.locator('.plan-item')).toHaveCount(3, { timeout: 15_000 })
+  await idle(page)
+  await expect(page.locator('.tool-row', { hasText: 'update_plan' })).toHaveCount(0)
+  await shot(page, '21-tarefas')
+
+  // Time and tokens count up while the model works.
+  await pickModel(page, 'chat-mock')
+  await send(page, 'lento')
+  await expect(page.locator('.plan')).toHaveCount(0)
+  await expect(page.locator('.run-status')).toContainText('Escrevendo', { timeout: 15_000 })
+  await expect(page.locator('.run-status')).toContainText('tokens')
+  await expect(page.locator('.run-status')).toContainText(/\d+ s/)
+
+  // A message written meanwhile waits its turn.
+  const box = page.getByLabel('Mensagem', { exact: true })
+  await box.fill('primeira da fila')
+  await box.press('Enter')
+  await expect(box).toHaveValue('')
+  await expect(page.locator('.queued-text')).toHaveText('primeira da fila')
+  await shot(page, '22-em-execucao')
+
+  // It goes out by itself when the run ends normally.
+  await expect(page.locator('.user-text').last()).toHaveText('primeira da fila', { timeout: 30_000 })
+  await expect(page.locator('.queued')).toHaveCount(0)
+  await idle(page)
+
+  // After an interruption it waits, because the person may have changed their mind.
+  await send(page, 'lento')
+  await expect(page.locator('.run-status')).toContainText('Escrevendo', { timeout: 15_000 })
+  await box.fill('segunda da fila')
+  await box.press('Enter')
+  await page.getByRole('button', { name: 'Interromper' }).click()
+  await expect(page.getByText('Interrompido por você.').last()).toBeVisible({ timeout: 10_000 })
+  await idle(page)
+  await expect(page.locator('.queued-text')).toHaveText('segunda da fila')
+
+  await page.getByRole('button', { name: 'Remover da fila: segunda da fila' }).click()
+  await expect(page.locator('.queued')).toHaveCount(0)
+
+  // "Enviar agora" interrupts the work in progress and sends the message.
+  await send(page, 'lento')
+  await expect(page.locator('.run-status')).toContainText('Escrevendo', { timeout: 15_000 })
+  await box.fill('terceira da fila')
+  await box.press('Enter')
+  await page.getByRole('button', { name: 'Enviar agora' }).click()
+  await expect(page.locator('.user-text').last()).toHaveText('terceira da fila', { timeout: 15_000 })
+  await idle(page)
+  await expect(page.locator('.queued')).toHaveCount(0)
+
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('automatic model: chooses by task and price, explains itself, and hands back control', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+
+  await page.keyboard.press('Control+k')
+  await expect(page.locator('.picker-row').first()).toBeVisible({ timeout: 15_000 })
+  await shot(page, '23-escolher-automatico')
+  await page.locator('.picker-auto').click()
+  await expect(page.locator('.model-chip-auto')).toHaveText('Automático')
+
+  await send(page, 'oi')
+  await expect(page.locator('.notice')).toContainText('escolhi chat-mock', { timeout: 15_000 })
+  await expect(page.locator('.author').last()).toHaveText('chat-mock')
+  await idle(page)
+
+  await send(page, 'refatore a arquitetura deste módulo')
+  await expect(page.locator('.notice')).toContainText('escolhi Claude Simulado', { timeout: 15_000 })
+  await expect(page.locator('.author').last()).toHaveText('Claude Simulado')
+  await idle(page)
+
+  // Stepping down would lose the prompt cache.
+  await send(page, 'ok')
+  await expect(page.locator('.notice')).toContainText('mantive Claude Simulado', { timeout: 15_000 })
+  await idle(page)
+
+  // Picking a model turns it off.
+  await pickModel(page, 'gpt-mock')
+  await expect(page.locator('.model-chip-auto')).toHaveCount(0)
+  await send(page, 'oi de novo')
+  await expect(page.locator('.author').last()).toHaveText('gpt-mock', { timeout: 15_000 })
+  await idle(page)
+
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('message box: paste a screenshot, attach files, and any model reads them', async () => {
+  await seedProviders()
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await pickModel(page, 'Claude Simulado')
+  const box = page.getByLabel('Mensagem', { exact: true })
+
+  // A file nobody can read is refused right there, without losing what was typed.
+  await box.fill('texto que não pode se perder')
+  await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'app.exe', mimeType: 'application/octet-stream', buffer: Buffer.from([1, 0, 2, 0]) })
+  await expect(page.getByRole('alert')).toContainText('binário')
+  await expect(box).toHaveValue('texto que não pode se perder')
+  await box.fill('')
+
+  // From the file picker.
+  await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'nota.md', mimeType: 'text/markdown', buffer: Buffer.from('# Nota importante') })
+  await expect(page.locator('.attachment')).toHaveCount(1)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+
+  // Pasted from the clipboard.
+  await box.evaluate((element, data) => {
+    const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0))
+    const clipboard = new DataTransfer()
+    clipboard.items.add(new File([bytes], 'image.png', { type: 'image/png' }))
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true }))
+  }, PNG)
+  await expect(page.locator('.attachment')).toHaveCount(2)
+  await expect(page.locator('.attachment img')).toHaveCount(1)
+  await expect(page.locator('.attachment-name').last()).toContainText(/^print-/)
+
+  // Dropped on the box.
+  await page.locator('.composer-box').evaluate((element) => {
+    const dropped = new DataTransfer()
+    dropped.items.add(new File(['descartável'], 'descartar.txt', { type: 'text/plain' }))
+    element.dispatchEvent(new DragEvent('drop', { dataTransfer: dropped, bubbles: true, cancelable: true }))
+  })
+  await expect(page.locator('.attachment')).toHaveCount(3)
+  await page.getByRole('button', { name: 'Remover anexo descartar.txt' }).click()
+  await expect(page.locator('.attachment')).toHaveCount(2)
+  await shot(page, '29-anexos')
+
+  await send(page, 'O que tem aqui?')
+  await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[anthropic]', { timeout: 15_000 })
+  await idle(page)
+  await expect(page.locator('.attachment')).toHaveCount(0)
+  await expect(page.locator('.sent-image')).toBeVisible()
+  await expect(page.locator('.sent-file')).toContainText('nota.md')
+  await shot(page, '30-anexos-enviados')
+
+  const claude = JSON.stringify(llm.last('anthropic')!.body.messages)
+  expect(claude).toContain(PNG)
+  expect(claude).toContain('# Nota importante')
+  expect(await readFile(path.join(dataDir, 'threads', (await readdir(path.join(dataDir, 'threads')))[0]), 'utf8')).not.toContain(PNG)
+
+  // Another model sees the same files.
+  await pickModel(page, 'gpt-mock')
+  await send(page, 'E você, o que vê?')
+  await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[openai-responses]', { timeout: 15_000 })
+  await idle(page)
+  expect(JSON.stringify(llm.last('openai-responses')!.body.input)).toContain(PNG)
+
+  // Only a file, with no text.
+  await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'sozinho.txt', mimeType: 'text/plain', buffer: Buffer.from('só o arquivo') })
+  await box.press('Enter')
+  await expect(page.locator('.sent-file', { hasText: 'sozinho.txt' })).toBeVisible({ timeout: 15_000 })
+  await idle(page)
+
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('choosing a model: recommendation for the moment, with cost, strength and measured time', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+
+  // The recommendation follows what is being written.
+  await page.getByLabel('Mensagem', { exact: true }).fill('refatore a arquitetura deste módulo')
+  await page.keyboard.press('Control+k')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.locator('.picker-row').first()).toBeVisible({ timeout: 15_000 })
+  const recommended = dialog.locator('.picker-recommended')
+  await expect(recommended).toContainText('Claude Simulado')
+  await expect(recommended).toContainText('tarefa complexa')
+  await shot(page, '31-escolher-modelo')
+
+  // Each row shows strength, an estimated cost and the context limit.
+  const claude = dialog.locator('.picker-row:not(.picker-recommended)', { hasText: 'Claude Simulado' })
+  await expect(claude).toContainText('até Máxima')
+  await expect(claude).toContainText('~US$')
+  await expect(claude).toContainText('200 mil')
+  await page.keyboard.press('Escape')
+
+  await page.getByLabel('Mensagem', { exact: true }).fill('oi')
+  await page.keyboard.press('Control+k')
+  await expect(dialog.locator('.picker-recommended')).toContainText('chat-mock')
+  await expect(dialog.locator('.picker-recommended')).toContainText('pedido simples')
+
+  // Time appears once a model has answered here.
+  const row = dialog.locator('.picker-row:not(.picker-recommended)', { hasText: 'chat-mock' })
+  await expect(row.locator('.picker-figure').nth(2)).toHaveText('—')
+  await dialog.locator('.picker-recommended').click()
+  await send(page, 'oi')
+  await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[openai-chat]', { timeout: 15_000 })
+  await idle(page)
+  await page.keyboard.press('Control+k')
+  await expect(row.locator('.picker-figure').nth(2)).toHaveText(/^~\d+ s$/, { timeout: 10_000 })
+  await page.keyboard.press('Escape')
+
+  // A model that can't read images says so when there is one to send.
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'print.png', mimeType: 'image/png', buffer: Buffer.from(PNG, 'base64') })
+  await page.keyboard.press('Control+k')
+  await expect(dialog.locator('.picker-row', { hasText: 'chat-mock' }).first()).toContainText('não lê imagens')
+  await page.keyboard.press('Escape')
+
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('a conversation from before projects were required stays readable but cannot continue', async () => {
+  await seedProviders()
+  const id = '11111111-1111-4111-8111-111111111111'
+  await mkdir(path.join(dataDir, 'threads'), { recursive: true })
+  await writeFile(
+    path.join(dataDir, 'threads', `${id}.json`),
+    JSON.stringify({
+      id,
+      title: 'Conversa antiga',
+      createdAt: 1,
+      updatedAt: 1,
+      workspace: null,
+      model: null,
+      system: 'antigo',
+      contextFiles: [],
+      allowedTools: [],
+      messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Mensagem antiga' }], createdAt: 1 }]
+    })
+  )
+  const { app, page, problems } = await launch()
+  await expect(page.locator('.user-text')).toHaveText('Mensagem antiga')
+  await expect(page.locator('.thread-group-name')).toHaveText('Sem projeto')
+  await expect(page.getByLabel('Mensagem', { exact: true })).toHaveCount(0)
+  await shot(page, '18-conversa-sem-projeto')
+
+  await page.getByRole('button', { name: 'Abrir um projeto' }).click()
+  await openProject(app, page)
+  await expect(page.locator('.thread-item')).toHaveCount(2)
+  expect(problems).toEqual([])
+  await app.close()
+})
+
 test('conversation management: new, switch, delete, shortcuts, narrow window, light and dark', async () => {
   await seedProviders()
   const { app, page, problems } = await launch()
+  await openProject(app, page)
   await pickModel(page, 'chat-mock')
   await send(page, 'Conversa número um')
   await idle(page)
 
+  // A new conversation stays in the same project, listed under its name.
   await page.keyboard.press('Control+n')
-  await expect(page.getByRole('heading', { name: 'Uma conversa. Qualquer modelo.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
   await send(page, 'Conversa número dois')
   await idle(page)
   await expect(page.locator('.thread-item')).toHaveCount(2)
+  await expect(page.locator('.thread-group')).toHaveCount(1)
+  await expect(page.locator('.thread-group-name')).toHaveText(path.basename(workspace))
+
+  // A second project gets its own group, and the first one stays one click away.
+  const otherProject = await mkdtemp(path.join(tmpdir(), 'uni-e2e-outro-'))
+  execFileSync('git', ['init', '-q'], { cwd: otherProject })
+  await page.getByRole('button', { name: 'Abrir outro projeto' }).click()
+  await expect(page.getByRole('heading', { name: 'Em qual projeto vamos trabalhar?' })).toBeVisible()
+  await expect(page.locator('.recent-name')).toHaveText(path.basename(workspace))
+  await shot(page, '16-projetos-recentes')
+  await answerFolderDialog(app, otherProject)
+  await page.getByRole('button', { name: 'Escolher a pasta do projeto' }).click()
+  await send(page, 'Conversa no outro projeto')
+  await idle(page)
+  await expect(page.locator('.thread-group')).toHaveCount(2)
+  await shot(page, '17-dois-projetos')
+  await page.locator('.thread-item', { hasText: 'Conversa no outro projeto' }).hover()
+  await page.getByRole('button', { name: 'Apagar “Conversa no outro projeto”' }).click()
+  await page.getByRole('button', { name: /^Confirmar/ }).click()
+  await expect(page.locator('.thread-group')).toHaveCount(1)
+  await rm(otherProject, { recursive: true, force: true }).catch(() => undefined)
 
   await page.locator('.thread-open', { hasText: 'Conversa número um' }).click()
   await expect(page.locator('.user-text')).toHaveText('Conversa número um')
@@ -484,7 +994,7 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await page.locator('.thread-item').hover()
   await page.getByRole('button', { name: /^Apagar/ }).click()
   await page.getByRole('button', { name: /^Confirmar/ }).click()
-  await expect(page.getByRole('heading', { name: 'Uma conversa. Qualquer modelo.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
 
   await send(page, 'Conversa para ver a tela')
   await idle(page)
@@ -496,15 +1006,34 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
 
   // The smallest window the app allows, with the busiest composer it can show.
   await page.setViewportSize({ width: 760, height: 520 })
-  await page.getByRole('radio', { name: 'Conselho' }).click()
-  await page.getByRole('button', { name: 'Vozes' }).click()
-  const dialog = page.getByRole('dialog')
-  for (const name of ['gpt-mock', 'Gemini Simulado', 'chat-mock']) await dialog.getByRole('button', { name }).first().click()
-  await dialog.getByRole('button', { name: /Concluir/ }).click()
+  await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'um-nome-de-arquivo-bem-comprido-para-testar.txt', mimeType: 'text/plain', buffer: Buffer.from('x') })
   await shot(page, '15-janela-estreita')
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(overflow).toBe(false)
-  await expect(page.getByRole('button', { name: 'Enviar' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Enviar', exact: true })).toBeInViewport()
+
+  // The panel steps aside instead of covering the message box, and opens again on request.
+  const projectPanel = page.locator('.project-panel')
+  await expect(projectPanel).toHaveCount(0)
+  await page.getByRole('button', { name: 'Enviar', exact: true }).click({ trial: true })
+  await page.getByRole('button', { name: 'Abrir painel do projeto' }).click()
+  await expect(projectPanel).toBeVisible()
+  await expect(page.getByRole('tab', { name: /^Git/ })).toBeVisible()
+  await shot(page, '33-painel-flutuante')
+  // Floating over the conversation, it has its own way out.
+  await page.getByRole('button', { name: 'Fechar painel', exact: true }).click()
+  await expect(projectPanel).toHaveCount(0)
+  await page.getByRole('button', { name: 'Enviar', exact: true }).click({ trial: true })
+
+  // With room again it comes back. Closed by hand there, it stays closed through both sizes.
+  await page.setViewportSize({ width: 1240, height: 820 })
+  await expect(projectPanel).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Fechar painel', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Fechar painel do projeto' }).click()
+  await expect(projectPanel).toHaveCount(0)
+  await page.setViewportSize({ width: 760, height: 520 })
+  await page.setViewportSize({ width: 1240, height: 820 })
+  await expect(projectPanel).toHaveCount(0)
 
   expect(problems).toEqual([])
   await app.close()

@@ -40,7 +40,9 @@ function connection(ref: ModelRef): ProviderConnection {
 
 function info(ref: ModelRef): ModelInfo {
   const base = { ...ref, label: ref.id, providerName: ref.provider }
-  return ref.provider === 'anthropic' ? { ...base, thinking: true, effort: true, maxOutput: 32000 } : base
+  return ref.provider === 'anthropic'
+    ? { ...base, thinking: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], maxOutput: 32000 }
+    : { ...base, efforts: ['low', 'medium', 'high'] }
 }
 
 interface Harness {
@@ -78,7 +80,7 @@ function newThread(): Thread {
 }
 
 const agent = (thread: Thread, text: string, model: ModelRef, permissionMode: PermissionMode = 'ask') =>
-  ({ threadId: thread.id, text, mode: 'agent' as const, model, permissionMode })
+  ({ threadId: thread.id, text, model, permissionMode })
 
 const errorsOf = (h: Harness) => h.events.flatMap((event) => (event.type === 'error' ? [event.text] : []))
 const noticesOf = (h: Harness) => h.events.flatMap((event) => (event.type === 'notice' ? [event.text] : []))
@@ -230,6 +232,87 @@ describe('uma conversa, vários modelos', () => {
   })
 })
 
+describe('força do modelo', () => {
+  const withEffort = (thread: Thread, text: string, model: ModelRef, effort: 'low' | 'high' | 'xhigh' | 'max') => ({ ...agent(thread, text, model), effort })
+
+  it('translates one setting into what each protocol understands', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, withEffort(thread, 'oi', CLAUDE, 'xhigh'))
+    expect(llm.last('anthropic')!.body.output_config).toEqual({ effort: 'xhigh' })
+
+    await h.runner.send(thread, withEffort(thread, 'oi', GPT, 'low'))
+    expect(llm.last('openai-responses')!.body.reasoning).toEqual({ effort: 'low' })
+
+    await h.runner.send(thread, withEffort(thread, 'oi', COMPAT, 'high'))
+    expect(llm.last('openai-chat')!.body.reasoning_effort).toBe('high')
+
+    await h.runner.send(thread, withEffort(thread, 'oi', GEMINI, 'low'))
+    expect(llm.last('gemini')!.body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' })
+
+    await h.runner.send(thread, withEffort(thread, 'oi', { provider: 'google', id: 'gemini-2.5-mock' }, 'low'))
+    expect(llm.last('gemini')!.body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 1024 })
+    expect(errorsOf(h)).toEqual([])
+  })
+
+  it('gives each model the closest level it supports', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, withEffort(thread, 'oi', GPT, 'max'))
+    expect(llm.last('openai-responses')!.body.reasoning).toEqual({ effort: 'high' })
+  })
+
+  it('leaves the setting out when the user chose the default', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, agent(thread, 'oi', GPT))
+    await h.runner.send(thread, agent(thread, 'oi', COMPAT))
+    expect(llm.last('openai-responses')!.body.reasoning).toBeUndefined()
+    expect(llm.last('openai-chat')!.body.reasoning_effort).toBeUndefined()
+  })
+
+  it('finishes the turn when a model rejects the setting', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, withEffort(thread, 'oi', { provider: 'compat', id: 'chat-sem-forca' }, 'high'))
+    expect(errorsOf(h)).toEqual([])
+    expect(noticesOf(h).some((notice) => notice.includes('não aceita ajuste de força'))).toBe(true)
+    expect(lastAssistant(thread).stop).toBe('end')
+  })
+})
+
+describe('tarefas em andamento', () => {
+  const PLAN = '{"items":[{"content":"Ler","status":"completed"},{"content":"Corrigir","status":"in_progress"}]}'
+
+  it('keeps the list a model sends, and clears it on the next request', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, agent(thread, `ferramenta: update_plan ${PLAN}`, COMPAT, 'read-only'))
+    expect(h.approvals).toHaveLength(0)
+    expect(thread.plan).toEqual([
+      { content: 'Ler', status: 'completed' },
+      { content: 'Corrigir', status: 'in_progress' }
+    ])
+    await h.runner.send(thread, agent(thread, 'outra coisa', COMPAT))
+    expect(thread.plan).toEqual([])
+  })
+
+  it('ignores a malformed list', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, agent(thread, 'ferramenta: update_plan {"items":[{"content":"Sem status"}]}', COMPAT))
+    expect(thread.plan).toEqual([])
+    expect(thread.messages.find((message) => message.role === 'tool')!.parts[0]).toMatchObject({ isError: true })
+  })
+
+  it('shows a note about the choice of model when the run starts', async () => {
+    const h = harness()
+    const thread = newThread()
+    await h.runner.send(thread, { ...agent(thread, 'oi', COMPAT), note: 'Automático: escolhi este.' })
+    expect(noticesOf(h)).toContain('Automático: escolhi este.')
+  })
+})
+
 describe('segurança das ferramentas', () => {
   it('asks before writing and honors a denial', async () => {
     const h = harness('deny')
@@ -371,71 +454,3 @@ describe('interrupções e falhas', () => {
   })
 })
 
-describe('conselho', () => {
-  const council = (thread: Thread, text: string, voices: ModelRef[], model: ModelRef = CLAUDE) =>
-    ({ threadId: thread.id, text, mode: 'council' as const, voices, model, permissionMode: 'ask' as const })
-
-  it('collects independent answers and keeps only the synthesis in the shared history', async () => {
-    const h = harness()
-    const thread = newThread()
-    await h.runner.send(thread, council(thread, 'Qual a melhor opção?', [GPT, GEMINI, COMPAT]))
-
-    expect(errorsOf(h)).toEqual([])
-    const answer = lastAssistant(thread)
-    expect(answer.model).toEqual(CLAUDE)
-    expect(answer.council?.voices.map((voice) => voice.model.id)).toEqual(['gpt-mock', 'gemini-mock', 'chat-mock'])
-    expect(answer.council?.voices.every((voice) => voice.text.length > 0)).toBe(true)
-
-    // The synthesizer received all voices, as flat text, with no tools.
-    const brief = JSON.stringify(llm.last('anthropic')!.body.messages)
-    expect(brief).toContain('[openai-responses]')
-    expect(brief).toContain('[gemini]')
-    expect(brief).toContain('[openai-chat]')
-    expect(llm.last('anthropic')!.body.tools).toBeUndefined()
-
-    // The next model sees one voice, not the whole council.
-    await h.runner.send(thread, agent(thread, 'e agora?', COMPAT))
-    const next = JSON.stringify(llm.last('openai-chat')!.body.messages)
-    expect(next).toContain('[anthropic]')
-    expect(next).not.toContain('Several models answered')
-    expect(next).not.toContain('[openai-responses]')
-  })
-
-  it('gives voices read-only tools and never asks for approval', async () => {
-    await writeFile(path.join(workspace, 'nota.txt'), 'dado do projeto')
-    await writeFile(path.join(workspace, '.env'), 'SEGREDO=1')
-    const h = harness()
-    const thread = newThread()
-    await h.runner.send(thread, council(thread, 'ferramenta: read_file {"path":".env"}', [COMPAT, GPT]))
-
-    expect(h.approvals).toHaveLength(0)
-    const chatTools = llm.requests.find((request) => request.protocol === 'openai-chat')!.body.tools.map((tool: any) => tool.function.name)
-    expect(chatTools.sort()).toEqual(['list_dir', 'read_file', 'search'])
-    expect(JSON.stringify(llm.requests)).not.toContain('SEGREDO')
-  })
-
-  it('survives a failing voice and records the failure', async () => {
-    const h = harness()
-    const thread = newThread()
-    await h.runner.send(thread, council(thread, 'pergunta', [GPT, { provider: 'compat', id: 'chat-mock' }, { provider: 'naoexiste', id: 'x' }]))
-    expect(errorsOf(h)).toEqual([])
-    const voices = lastAssistant(thread).council!.voices
-    expect(voices.filter((voice) => voice.error)).toHaveLength(1)
-    expect(voices.filter((voice) => !voice.error)).toHaveLength(2)
-  })
-
-  it('skips the synthesis call when only one voice answered', async () => {
-    const h = harness()
-    const thread = newThread()
-    await h.runner.send(thread, council(thread, 'pergunta', [COMPAT, { provider: 'naoexiste', id: 'x' }]))
-    expect(llm.last('anthropic')).toBeUndefined()
-    expect(lastAssistant(thread).model).toEqual(COMPAT)
-  })
-
-  it('reports an error when every voice fails', async () => {
-    const h = harness()
-    const thread = newThread()
-    await h.runner.send(thread, council(thread, 'pergunta', [{ provider: 'naoexiste', id: 'x' }]))
-    expect(errorsOf(h)[0]).toContain('Nenhum modelo')
-  })
-})

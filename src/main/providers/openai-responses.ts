@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
-import type { ResponseInputItem, ResponseOutputItem } from 'openai/resources/responses/responses'
-import type { Message, ModelInfo, Part, StopReason } from '../../shared/types'
-import { contextOf, replayable, safeToolId, textOf, toolResultsOf } from './history'
+import type { ResponseInputContent, ResponseInputItem, ResponseOutputItem } from 'openai/resources/responses/responses'
+import { clampEffort, type AttachmentPart, type Message, type ModelInfo, type Part, type StopReason } from '../../shared/types'
+import { attachmentAsText, contextOf, isImage, isPdf, replayable, safeToolId, textOf, toolResultsOf } from './history'
 import { isTextModel, listOpenAiStyleModels } from './openai-models'
 import {
   AbortedError,
@@ -12,6 +12,13 @@ import {
   type ProviderAdapter,
   type ProviderConnection
 } from './types'
+
+function toInputContent(part: AttachmentPart): ResponseInputContent {
+  const url = `data:${part.mediaType};base64,${part.data}`
+  if (isImage(part)) return { type: 'input_image', image_url: url, detail: 'auto' }
+  if (isPdf(part)) return { type: 'input_file', filename: part.name, file_data: url }
+  return { type: 'input_text', text: attachmentAsText(part) }
+}
 
 export function toResponsesInput(messages: Message[], target: ModelInfo, replayRaw: boolean): ResponseInputItem[] {
   const input: ResponseInputItem[] = []
@@ -28,6 +35,11 @@ export function toResponsesInput(messages: Message[], target: ModelInfo, replayR
       continue
     }
     const text = textOf(message.parts)
+    const attachments = message.parts.filter((part): part is AttachmentPart => part.type === 'attachment' && !!part.data)
+    if (message.role === 'user' && attachments.length > 0) {
+      input.push({ role: 'user', content: [...attachments.map(toInputContent), ...(text ? [{ type: 'input_text' as const, text }] : [])] })
+      continue
+    }
     if (text) input.push({ role: message.role === 'user' ? 'user' : 'assistant', content: text })
     for (const part of message.parts) {
       if (part.type === 'tool_call') {
@@ -86,6 +98,7 @@ export function createResponsesAdapter(connection: ProviderConnection): Provider
 
     async stream(request, onEvent): Promise<CompletionResult> {
       const { model, system, messages, tools, signal, replayRaw } = request
+      const effort = request.effort && model.efforts?.length ? clampEffort(request.effort, model.efforts) : undefined
       try {
         const stream = await client.responses.create(
           {
@@ -94,6 +107,7 @@ export function createResponsesAdapter(connection: ProviderConnection): Provider
             input: toResponsesInput(messages, model, replayRaw),
             store: false,
             stream: true,
+            ...(effort ? { reasoning: { effort: effort as 'low' | 'medium' | 'high' } } : {}),
             ...(tools.length > 0
               ? {
                   tools: tools.map((tool) => ({

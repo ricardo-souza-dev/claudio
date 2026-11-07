@@ -5,8 +5,8 @@ import type {
   BetaMessageParam,
   MessageCreateParamsStreaming
 } from '@anthropic-ai/sdk/resources/beta/messages/messages'
-import type { Message, ModelInfo, Part, StopReason } from '../../shared/types'
-import { contextOf, replayable, safeToolId, toolResultsOf } from './history'
+import { clampEffort, EFFORT_LEVELS, type Message, type ModelInfo, type Part, type StopReason } from '../../shared/types'
+import { attachmentAsText, contextOf, isImage, isPdf, replayable, safeToolId, toolResultsOf } from './history'
 import {
   AbortedError,
   describeError,
@@ -57,6 +57,15 @@ export function toAnthropicMessages(messages: Message[], target: ModelInfo, repl
     const content: BetaContentBlockParam[] = []
     for (const part of message.parts) {
       if (part.type === 'text' && part.text) content.push({ type: 'text', text: part.text })
+      if (part.type === 'attachment' && part.data) {
+        if (isImage(part)) {
+          content.push({ type: 'image', source: { type: 'base64', media_type: part.mediaType as 'image/png', data: part.data } })
+        } else if (isPdf(part)) {
+          content.push({ type: 'document', title: part.name, source: { type: 'base64', media_type: 'application/pdf', data: part.data } })
+        } else {
+          content.push({ type: 'text', text: attachmentAsText(part) })
+        }
+      }
       if (part.type === 'tool_call') {
         content.push({
           type: 'tool_use',
@@ -128,7 +137,9 @@ export function buildAnthropicRequest(request: CompletionRequest, official: bool
     } as MessageCreateParamsStreaming['thinking']
     betas.push(THINKING_CONTROLS_BETA)
   }
-  if (model.effort) params.output_config = { effort: 'high' }
+  // The app's default is "high", since this API's own default varies by model.
+  const effort = request.effort !== null && model.efforts?.length ? clampEffort(request.effort ?? 'high', model.efforts) : undefined
+  if (effort) params.output_config = { effort }
   if (official && MODELS_WITH_SERVER_FALLBACK.has(model.id)) {
     // Retries a policy decline on another model inside the same call. The label on
     // the message comes from the response, so the user sees who actually answered.
@@ -195,7 +206,7 @@ export function createAnthropicAdapter(connection: ProviderConnection): Provider
           contextWindow: detail.max_input_tokens,
           maxOutput: detail.max_tokens,
           thinking: caps?.thinking?.types?.adaptive?.supported === true,
-          effort: caps?.effort?.high?.supported === true
+          efforts: EFFORT_LEVELS.filter((level) => caps?.effort?.[level]?.supported === true)
         })
       }
       return models

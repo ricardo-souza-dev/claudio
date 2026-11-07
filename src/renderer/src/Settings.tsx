@@ -1,6 +1,7 @@
-import { ChevronDown, ExternalLink, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ExternalLink, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { McpStatus, ModelInfo, Preferences, Protocol, ProviderTest, ProviderView } from '../../shared/types'
+import { remoteErrorMessage } from './format'
 import { api } from './store'
 
 type Tab = 'providers' | 'mcp' | 'memory'
@@ -25,6 +26,21 @@ const PROTOCOL_NAMES: Record<Protocol, string> = {
 }
 
 const MCP_PRESETS: { label: string; note: string; json: unknown }[] = [
+  {
+    label: 'Chrome (perfil separado)',
+    note: 'Abre um Chrome próprio, sem os seus logins. É o jeito mais seguro de começar.',
+    json: { mcpServers: { chrome: { command: 'npx', args: ['-y', '@playwright/mcp@latest', '--browser', 'chrome'] } } }
+  },
+  {
+    label: 'Chrome (seus logins)',
+    note: 'Usa as abas e os logins do seu Chrome. Instale antes a extensão Playwright MCP Bridge e só permita o que precisar: o modelo agirá nas suas contas.',
+    json: { mcpServers: { 'chrome-logado': { command: 'npx', args: ['-y', '@playwright/mcp@latest', '--extension'] } } }
+  },
+  {
+    label: 'Chrome DevTools',
+    note: 'Conecta ao Chrome aberto para inspecionar páginas, rede, console e desempenho. Requer uma versão recente do Chrome.',
+    json: { mcpServers: { 'chrome-devtools': { command: 'npx', args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'] } } }
+  },
   { label: 'Claude Code', note: 'Requer o CLI claude instalado', json: { mcpServers: { 'claude-code': { command: 'claude', args: ['mcp', 'serve'] } } } },
   { label: 'Codex', note: 'Requer o CLI codex instalado', json: { mcpServers: { codex: { command: 'codex', args: ['mcp-server'] } } } },
   { label: 'Sistema de arquivos', note: 'Troque o caminho no final', json: { mcpServers: { arquivos: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', 'C:/caminho/da/pasta'] } } } }
@@ -34,7 +50,7 @@ function firstLine(text: string): string {
   return text.split('\n')[0]
 }
 
-function ProviderRow({ provider, models, error, onProviders }: { provider: ProviderView; models: ModelInfo[]; error?: string; onProviders(list: ProviderView[]): void }) {
+function ProviderRow({ provider, models, error, onProviders, onDone }: { provider: ProviderView; models: ModelInfo[]; error?: string; onProviders(list: ProviderView[]): void; onDone(): void }) {
   const count = models.filter((model) => model.provider === provider.id).length
   const [open, setOpen] = useState(false)
   const [key, setKey] = useState('')
@@ -51,7 +67,7 @@ function ProviderRow({ provider, models, error, onProviders }: { provider: Provi
     try {
       await work()
     } catch (failure) {
-      setProblem((failure as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+      setProblem(remoteErrorMessage(failure))
     } finally {
       setBusy(false)
     }
@@ -138,6 +154,11 @@ function ProviderRow({ provider, models, error, onProviders }: { provider: Provi
             )}
             {test?.ok && <span className="result ok">Conectado: {test.count} modelos</span>}
           </div>
+          {test?.ok && (
+            <button className="button start-chat" onClick={onDone}>
+              Começar a conversar
+            </button>
+          )}
           {(test?.error || problem || error) && <p className="result failed">{firstLine(problem ?? test?.error ?? error ?? '')}</p>}
         </div>
       )}
@@ -160,7 +181,7 @@ function CustomProviderForm({ onProviders }: { onProviders(list: ProviderView[])
       setBaseUrl('')
       setKey('')
     } catch (failure) {
-      setProblem((failure as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+      setProblem(remoteErrorMessage(failure))
     }
   }
 
@@ -202,8 +223,8 @@ function CustomProviderForm({ onProviders }: { onProviders(list: ProviderView[])
   )
 }
 
-function ProvidersTab({ providers, models, errors, onProviders }: Pick<SettingsProps, 'providers' | 'models' | 'errors' | 'onProviders'>) {
-  const row = (provider: ProviderView) => <ProviderRow key={provider.id} provider={provider} models={models} error={errors[provider.id]} onProviders={onProviders} />
+function ProvidersTab({ providers, models, errors, onProviders, onClose }: Pick<SettingsProps, 'providers' | 'models' | 'errors' | 'onProviders' | 'onClose'>) {
+  const row = (provider: ProviderView) => <ProviderRow key={provider.id} provider={provider} models={models} error={errors[provider.id]} onProviders={onProviders} onDone={onClose} />
   const cloud = providers.filter((provider) => !provider.local && !provider.custom)
   const local = providers.filter((provider) => provider.local)
   const custom = providers.filter((provider) => provider.custom)
@@ -228,6 +249,7 @@ function ProvidersTab({ providers, models, errors, onProviders }: Pick<SettingsP
 function McpTab({ mcp, onMcp }: Pick<SettingsProps, 'mcp' | 'onMcp'>) {
   const [json, setJson] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
+  const [presetNote, setPresetNote] = useState<string | null>(null)
 
   const add = async (): Promise<void> => {
     setProblem(null)
@@ -235,7 +257,7 @@ function McpTab({ mcp, onMcp }: Pick<SettingsProps, 'mcp' | 'onMcp'>) {
       onMcp(await api.mcp.add(json))
       setJson('')
     } catch (failure) {
-      setProblem((failure as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+      setProblem(remoteErrorMessage(failure))
     }
   }
 
@@ -271,11 +293,21 @@ function McpTab({ mcp, onMcp }: Pick<SettingsProps, 'mcp' | 'onMcp'>) {
       <p className="hint">Cole o mesmo JSON que você usaria em outros clientes MCP. Só adicione servidores em que confia: eles rodam com as suas permissões.</p>
       <div className="preset-row">
         {MCP_PRESETS.map((preset) => (
-          <button className="chip" key={preset.label} title={preset.note} onClick={() => setJson(JSON.stringify(preset.json, null, 2))}>
+          <button
+            className="chip"
+            key={preset.label}
+            title={preset.note}
+            onClick={() => {
+              setJson(JSON.stringify(preset.json, null, 2))
+              setPresetNote(preset.note)
+            }}
+          >
             {preset.label}
           </button>
         ))}
       </div>
+      {presetNote && <p className="hint preset-note">{presetNote}</p>}
+      <p className="hint">No navegador, uma página pode tentar dar ordens ao modelo. Por isso, cada ação pede a sua confirmação.</p>
       <textarea
         className="json-input"
         aria-label="Configuração MCP em JSON"
@@ -353,6 +385,11 @@ export function Settings(props: SettingsProps) {
   return (
     <div className="settings" role="dialog" aria-modal="true" aria-label="Ajustes">
       <nav className="settings-nav">
+        <div className="settings-top">
+          <button className="settings-back" onClick={onClose} title="Voltar (Esc)">
+            <ArrowLeft size={14} aria-hidden /> Voltar à conversa
+          </button>
+        </div>
         <div className="settings-title">Ajustes</div>
         {tabs.map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} aria-current={tab === id} onClick={() => setTab(id)}>
@@ -361,11 +398,8 @@ export function Settings(props: SettingsProps) {
         ))}
       </nav>
       <div className="settings-content">
-        <button className="icon-button settings-close" aria-label="Fechar ajustes" title="Fechar (Esc)" onClick={onClose}>
-          <X size={16} />
-        </button>
         <div className="settings-page">
-          {tab === 'providers' && <ProvidersTab providers={props.providers} models={props.models} errors={props.errors} onProviders={props.onProviders} />}
+          {tab === 'providers' && <ProvidersTab providers={props.providers} models={props.models} errors={props.errors} onProviders={props.onProviders} onClose={onClose} />}
           {tab === 'mcp' && <McpTab mcp={props.mcp} onMcp={props.onMcp} />}
           {tab === 'memory' && <MemoryTab prefs={props.prefs} onPrefs={props.onPrefs} />}
         </div>

@@ -55,6 +55,9 @@ interface Plan {
 
 function plan(lastUserText: string, hasToolResult: boolean, label: string, contextChars: number): Plan {
   if (hasToolResult) return { kind: 'text', text: `[${label}] ferramenta concluída.` }
+  if (lastUserText.includes('Changes to describe')) {
+    return { kind: 'text', text: 'feat(painel): adiciona a segunda linha\n\nMostra o que mudou no README.' }
+  }
   if (lastUserText.includes('markdown')) {
     return {
       kind: 'text',
@@ -172,6 +175,12 @@ async function chat(res: ServerResponse, body: any, step: Plan, signal: AbortSig
     res.end(JSON.stringify({ error: { message: `${body.model} does not support tools` } }))
     return
   }
+  // Mirrors a model the public catalog wrongly lists as accepting an effort level.
+  if (String(body.model).includes('sem-forca') && body.reasoning_effort) {
+    res.writeHead(400, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: { message: 'Unrecognized request argument: reasoning_effort' } }))
+    return
+  }
   res.writeHead(200, SSE_HEADERS)
   const base = { id: 'chatcmpl-mock', object: 'chat.completion.chunk', created: 1, model: body.model }
   for (const piece of chunks(step.text)) {
@@ -225,6 +234,31 @@ function json(res: ServerResponse, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+function fact(context: number, output: number, input: number, price: number, reasoning: boolean, released: string, toolCall = true, images = false) {
+  return {
+    limit: { context, output },
+    cost: { input, output: price, cache_read: input / 10 },
+    reasoning,
+    tool_call: toolCall,
+    release_date: released,
+    modalities: { input: images ? ['text', 'image'] : ['text'], output: ['text'] }
+  }
+}
+
+/** The same shape as models.dev, with the prices spread so automatic choice has something to decide. */
+const MODEL_FACTS = {
+  anthropic: { models: { 'claude-mock': fact(200_000, 32_000, 3, 15, true, '2026-06-01', true, true) } },
+  openai: { models: { 'gpt-mock': fact(128_000, 16_000, 1, 4, true, '2026-05-01', true, true) } },
+  google: { models: { 'gemini-mock': fact(100_000, 8_000, 0.5, 2, true, '2026-04-01', true, true) } },
+  outro: {
+    models: {
+      'chat-mock': fact(64_000, 8_000, 0.1, 0.4, false, '2026-03-01'),
+      'chat-sem-ferramentas': fact(32_000, 4_000, 0.05, 0.2, false, '2026-03-01', false),
+      'chat-sem-forca': fact(64_000, 8_000, 0.2, 0.8, true, '2026-03-01')
+    }
+  }
+}
+
 export async function startMockLlm(): Promise<MockLlm> {
   const requests: RecordedRequest[] = []
 
@@ -237,7 +271,7 @@ export async function startMockLlm(): Promise<MockLlm> {
         if (path === '/anthropic/v1/models') {
           return json(res, {
             data: [
-              { type: 'model', id: 'claude-mock', display_name: 'Claude Simulado', created_at: '2026-01-01T00:00:00Z', max_input_tokens: 200000, max_tokens: 32000, capabilities: { thinking: { types: { adaptive: { supported: true } } }, effort: { high: { supported: true } } } }
+              { type: 'model', id: 'claude-mock', display_name: 'Claude Simulado', created_at: '2026-01-01T00:00:00Z', max_input_tokens: 200000, max_tokens: 32000, capabilities: { thinking: { types: { adaptive: { supported: true } } }, effort: { low: { supported: true }, medium: { supported: true }, high: { supported: true }, xhigh: { supported: true }, max: { supported: true } } } }
             ],
             has_more: false,
             first_id: 'claude-mock',
@@ -245,7 +279,8 @@ export async function startMockLlm(): Promise<MockLlm> {
           })
         }
         if (path === '/openai/v1/models') return json(res, { object: 'list', data: [{ id: 'gpt-mock', object: 'model' }, { id: 'text-embedding-mock', object: 'model' }] })
-        if (path === '/compat/v1/models') return json(res, { object: 'list', data: [{ id: 'chat-mock', object: 'model' }, { id: 'chat-sem-ferramentas', object: 'model' }] })
+        if (path === '/compat/v1/models') return json(res, { object: 'list', data: [{ id: 'chat-mock', object: 'model' }, { id: 'chat-sem-ferramentas', object: 'model' }, { id: 'chat-sem-forca', object: 'model' }] })
+        if (path === '/facts.json') return json(res, MODEL_FACTS)
         if (/^\/gemini\/v1(beta)?\/models$/.test(path)) {
           return json(res, { models: [{ name: 'models/gemini-mock', displayName: 'Gemini Simulado', supportedGenerationMethods: ['generateContent'], inputTokenLimit: 100000, outputTokenLimit: 8000 }] })
         }

@@ -1,4 +1,5 @@
 import type { ModelInfo, ModelListing, ModelRef, ProviderTest } from '../shared/types'
+import { defaultEfforts, type ModelFactsStore } from './model-facts'
 import { createAdapter } from './providers/catalog'
 import type { ProviderAdapter } from './providers/types'
 import type { SettingsStore } from './store'
@@ -10,7 +11,10 @@ export class ModelDirectory {
   private cache = new Map<string, ModelInfo[]>()
   private errors: Record<string, string> = {}
 
-  constructor(private settings: SettingsStore) {}
+  constructor(
+    private settings: SettingsStore,
+    private facts: ModelFactsStore
+  ) {}
 
   invalidate(providerId?: string): void {
     if (providerId) {
@@ -30,6 +34,30 @@ export class ModelDirectory {
 
   private async fetch(providerId: string): Promise<ModelInfo[]> {
     return this.adapter(providerId).listModels(AbortSignal.timeout(LIST_TIMEOUT_MS))
+  }
+
+  /** A provider's own API wins; the public catalog fills in what it doesn't report. */
+  private enrich(listed: ModelInfo): ModelInfo {
+    const speed = this.settings.speedOf(listed)
+    const model = speed ? { ...listed, speed } : listed
+    const facts = this.facts.lookup(model.provider, model.id)
+    if (!facts) return model
+    const protocol = this.settings.connection(model.provider)?.protocol ?? 'openai-chat'
+    return {
+      ...model,
+      contextWindow: model.contextWindow ?? facts.context,
+      maxOutput: model.maxOutput ?? facts.output,
+      pricing: facts.pricing,
+      reasoning: facts.reasoning,
+      supportsTools: facts.tools,
+      imageInput: facts.imageInput,
+      released: facts.released,
+      efforts: model.efforts?.length ? model.efforts : defaultEfforts(protocol, facts.reasoning)
+    }
+  }
+
+  private isTextModel(model: ModelInfo): boolean {
+    return this.facts.lookup(model.provider, model.id)?.textOutput !== false
   }
 
   async list(refresh = false): Promise<ModelListing> {
@@ -53,6 +81,8 @@ export class ModelDirectory {
     const models = [...this.cache.entries()]
       .filter(([id]) => known.has(id))
       .flatMap(([, list]) => list)
+      .filter((model) => this.isTextModel(model))
+      .map((model) => this.enrich(model))
     return { models, errors: { ...this.errors } }
   }
 
@@ -61,7 +91,7 @@ export class ModelDirectory {
     try {
       const models = await this.fetch(providerId)
       this.cache.set(providerId, models)
-      return { ok: true, count: models.length }
+      return { ok: true, count: models.filter((model) => this.isTextModel(model)).length }
     } catch (error) {
       return { ok: false, error: (error as Error).message }
     }
@@ -76,6 +106,6 @@ export class ModelDirectory {
     }
     const known = list.find((model) => model.id === ref.id)
     const providerName = this.settings.connection(ref.provider)!.name
-    return { adapter, info: known ?? { ...ref, label: ref.id, providerName } }
+    return { adapter, info: this.enrich(known ?? { ...ref, label: ref.id, providerName }) }
   }
 }

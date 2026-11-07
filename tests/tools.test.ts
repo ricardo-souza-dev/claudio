@@ -1,8 +1,11 @@
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ModelInfo } from '../src/shared/types'
+import { buildSystemPrompt } from '../src/main/agent/context'
+import { describeProject, resolveProjectRoot, withoutCredentials } from '../src/main/project'
 import { buildAnthropicRequest } from '../src/main/providers/anthropic'
 import { createAdapter } from '../src/main/providers/catalog'
 import { toGeminiSchema } from '../src/main/providers/gemini'
@@ -92,6 +95,81 @@ describe('pasta de trabalho', () => {
     for (const file of ['.env.example', '.env.sample', 'envelope.ts', 'keyboard.ts', 'README.md']) {
       expect(isSensitivePath(file), file).toBe(false)
     }
+  })
+})
+
+describe('projeto', () => {
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore' })
+
+  it('resolves any folder inside a repository to its root', async () => {
+    git('init', '-q')
+    await mkdir(path.join(root, 'src', 'interno'), { recursive: true })
+    expect(await resolveProjectRoot(path.join(root, 'src', 'interno'))).toBe(path.resolve(root))
+    expect(await resolveProjectRoot(root)).toBe(path.resolve(root))
+  })
+
+  it('accepts worktrees and submodules, where .git is a file', async () => {
+    await mkdir(path.join(root, 'sub'))
+    await writeFile(path.join(root, '.git'), 'gitdir: ../outro/.git/worktrees/x')
+    expect(await resolveProjectRoot(path.join(root, 'sub'))).toBe(path.resolve(root))
+  })
+
+  it('accepts a folder without Git as it is, and refuses one that does not exist', async () => {
+    await mkdir(path.join(root, 'sem-git'))
+    expect(await resolveProjectRoot(path.join(root, 'sem-git'))).toBe(path.resolve(root, 'sem-git'))
+    await expect(resolveProjectRoot(path.join(root, 'nao-existe'))).rejects.toThrow('A pasta não existe')
+  })
+
+  it('describes a project without Git too', async () => {
+    await writeFile(path.join(root, 'a.txt'), '')
+    const description = await describeProject(root)
+    expect(description).toContain('a.txt')
+    expect(description).not.toContain('Branch')
+  })
+
+  it('removes credentials from remote addresses', () => {
+    expect(withoutCredentials('https://usuario:ghp_segredo@github.com/a/b.git')).toBe('https://github.com/a/b.git')
+    expect(withoutCredentials('https://ghp_segredo@github.com/a/b.git')).toBe('https://github.com/a/b.git')
+    expect(withoutCredentials('https://github.com/a/b.git')).toBe('https://github.com/a/b.git')
+    expect(withoutCredentials('git@github.com:a/b.git')).toBe('git@github.com:a/b.git')
+  })
+
+  it('describes the project: branch, origin, files and README, with no credentials', async () => {
+    git('init', '-q', '-b', 'principal')
+    git('remote', 'add', 'origin', 'https://usuario:ghp_segredo@github.com/a/b.git')
+    await mkdir(path.join(root, 'src'))
+    await mkdir(path.join(root, 'node_modules', 'pacote'), { recursive: true })
+    await writeFile(path.join(root, 'src', 'a.ts'), 'conteudo-do-codigo')
+    await writeFile(path.join(root, 'README.md'), '# Meu projeto\nExplicação.')
+
+    const description = await describeProject(root)
+    expect(description).toContain('Branch when this conversation started: principal')
+    expect(description).toContain('Origin: https://github.com/a/b.git')
+    expect(description).not.toContain('ghp_segredo')
+    expect(description).toContain('src/a.ts')
+    expect(description).toContain('README.md')
+    expect(description).toContain('# Meu projeto')
+    // Names only, and nothing from inside dependency folders or .git.
+    expect(description).not.toContain('conteudo-do-codigo')
+    expect(description).toContain('node_modules/')
+    expect(description).not.toContain('node_modules/pacote')
+    expect(description).not.toContain('.git/')
+  })
+
+  it('keeps the description to a bounded size on a huge project', async () => {
+    await mkdir(path.join(root, 'muitos'))
+    await Promise.all(Array.from({ length: 400 }, (_, index) => writeFile(path.join(root, 'muitos', `arquivo-${index}.txt`), '')))
+    await writeFile(path.join(root, 'README.md'), 'x'.repeat(50_000))
+    const description = await describeProject(root)
+    expect((description.match(/arquivo-/g) ?? []).length).toBeLessThanOrEqual(150)
+    expect(description.length).toBeLessThan(20_000)
+  })
+
+  it('reaches every model through the system prompt', async () => {
+    await writeFile(path.join(root, 'README.md'), 'Contexto geral do projeto.')
+    const { system } = await buildSystemPrompt(root, '')
+    expect(system).toContain('Contexto geral do projeto.')
+    expect(system).toContain(`<project name="${path.basename(root)}">`)
   })
 })
 
@@ -256,7 +334,7 @@ describe('descoberta de modelos', () => {
         createAdapter({ id, name: id, protocol, baseUrl, ...base }).listModels()
 
       const anthropic = await list('a', 'anthropic', `${llm.url}/anthropic`)
-      expect(anthropic[0]).toMatchObject({ id: 'claude-mock', label: 'Claude Simulado', thinking: true, effort: true, maxOutput: 32000 })
+      expect(anthropic[0]).toMatchObject({ id: 'claude-mock', label: 'Claude Simulado', thinking: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], maxOutput: 32000 })
 
       const openai = await list('o', 'openai-responses', `${llm.url}/openai/v1`)
       expect(openai.map((model) => model.id)).toEqual(['gpt-mock'])

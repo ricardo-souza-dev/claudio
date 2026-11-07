@@ -1,15 +1,21 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
-import type { ApprovalDecision, ApprovalRequest, ModelRef, Protocol, SendRequest, UniEvent } from '../shared/types'
+import type { ApprovalDecision, ApprovalRequest, GitAction, ModelRef, Protocol, SendRequest, UniEvent } from '../shared/types'
 import { Runner } from './agent/runner'
+import { AttachmentStore } from './attachments'
+import { generateCommitMessage } from './commit-message'
+import { discoverRepositories, GitService } from './git'
+import { ModelFactsStore } from './model-facts'
 import { ModelDirectory } from './models'
+import { resolveProjectRoot } from './project'
 import { SettingsStore, ThreadStore, type Vault } from './store'
-import { workspaceTools } from './tools/builtin'
+import { resolveInside, workspaceTools } from './tools/builtin'
 import { McpManager, parseMcpJson } from './tools/mcp'
 
-const DARK = { background: '#141311', symbols: '#ebe6dc' }
-const LIGHT = { background: '#f5f2ea', symbols: '#1c1a17' }
+const DARK = { background: '#1e1e1e', symbols: '#ececec' }
+const LIGHT = { background: '#f7f7f7', symbols: '#1a1a1a' }
 const TITLE_BAR_HEIGHT = 40
+const ICON = join(__dirname, '../../resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
 
 const vault: Vault = {
   encrypt(text) {
@@ -35,6 +41,7 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 520,
     show: false,
+    icon: ICON,
     backgroundColor: colors.background,
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
@@ -84,7 +91,10 @@ async function start(): Promise<void> {
   await settings.load()
   await threads.load()
 
-  const models = new ModelDirectory(settings)
+  const attachments = new AttachmentStore(dataDir)
+  const facts = new ModelFactsStore(dataDir, undefined, () => emit({ type: 'models-changed' }))
+  await facts.load()
+  const models = new ModelDirectory(settings, facts)
   const mcp = new McpManager((servers) => emit({ type: 'mcp', servers }))
   for (const server of settings.mcpServers()) mcp.connect(server)
 
@@ -98,6 +108,9 @@ async function start(): Promise<void> {
     memory: () => settings.prefs().memory,
     emit,
     save: (thread) => threads.save(thread),
+    saveAttachments: (files) => attachments.save(files),
+    loadAttachments: (messages, model) => attachments.load(messages, model),
+    recordSpeed: (ref, firstTokenMs, generatingMs, outputTokens) => settings.recordSpeed(ref, firstTokenMs, generatingMs, outputTokens),
     requestApproval: (threadId: string, request: ApprovalRequest, signal: AbortSignal) =>
       new Promise<ApprovalDecision>((resolve) => {
         const finish = (decision: ApprovalDecision): void => {
@@ -141,7 +154,11 @@ async function start(): Promise<void> {
 
   handle('threads.list', () => threads.list())
   handle('threads.get', (id: string) => threads.get(id))
-  handle('threads.create', (workspace: string | null, model: ModelRef | null) => threads.create(workspace, model))
+  handle('threads.create', async (workspace: string | null, model: ModelRef | null) => {
+    // A project that was moved or deleted sends the new conversation back to the project chooser.
+    const root = workspace ? await resolveProjectRoot(workspace).catch(() => null) : null
+    return threads.create(root, model)
+  })
   handle('threads.remove', async (id: string) => {
     runner.stop(id)
     await threads.remove(id)
@@ -158,8 +175,8 @@ async function start(): Promise<void> {
     const thread = await threads.get(id)
     if (!thread) throw new Error('Conversa não encontrada.')
     // The folder is part of the frozen context the models were told about.
-    if (thread.system !== null) throw new Error('A pasta só pode mudar antes da primeira mensagem.')
-    thread.workspace = workspace
+    if (thread.system !== null) throw new Error('O projeto só pode mudar antes da primeira mensagem.')
+    thread.workspace = workspace ? await resolveProjectRoot(workspace) : null
     await threads.save(thread)
     return thread
   })
@@ -173,6 +190,8 @@ async function start(): Promise<void> {
   handle('chat.send', async (request: SendRequest) => {
     const thread = await threads.get(request.threadId)
     if (!thread) throw new Error('Conversa não encontrada.')
+    if (!thread.workspace) throw new Error('Toda conversa precisa de um projeto. Abra uma conversa nova em uma pasta.')
+    await resolveProjectRoot(thread.workspace)
     if (runner.isRunning(thread.id)) throw new Error('Esta conversa já está em andamento.')
     void runner.send(thread, request).then(() => emit({ type: 'threads', threads: threads.list() }))
   })
@@ -180,6 +199,41 @@ async function start(): Promise<void> {
   handle('chat.respond', (_threadId: string, approvalId: string, decision: ApprovalDecision) => {
     pendingApprovals.get(approvalId)?.(decision)
   })
+
+  // Each request names a conversation, and the project folder comes from it, not from the page.
+  const workspaceOf = async (threadId: string): Promise<string> => {
+    const thread = await threads.get(threadId)
+    if (!thread?.workspace) throw new Error('Esta conversa não tem um projeto.')
+    return thread.workspace
+  }
+  const gitFor = async (threadId: string, repo = ''): Promise<GitService> => {
+    const workspace = await workspaceOf(threadId)
+    const gh = process.env.CLAUDIO_GH_COMMAND ? (JSON.parse(process.env.CLAUDIO_GH_COMMAND) as string[]) : undefined
+    return new GitService(repo ? await resolveInside(workspace, repo) : workspace, gh)
+  }
+  handle('attachments.preview', (ref: string) => attachments.preview(ref))
+  handle('project.repos', async (threadId: string) => discoverRepositories(await workspaceOf(threadId)))
+  handle('project.git', async (threadId: string, repo: string) => (await gitFor(threadId, repo)).status())
+  handle('project.act', async (threadId: string, repo: string, action: GitAction) => {
+    const git = await gitFor(threadId, repo)
+    await git.act(action)
+    return git.status()
+  })
+  handle('project.diff', async (threadId: string, repo: string, file: string, staged: boolean) => (await gitFor(threadId, repo)).diff(file, staged))
+  handle('project.prs', async (threadId: string, repo: string) => (await gitFor(threadId, repo)).pullRequests())
+  handle('project.createPr', async (threadId: string, repo: string, input: { title: string; body: string }) => (await gitFor(threadId, repo)).createPullRequest(input))
+  handle('project.checkoutPr', async (threadId: string, repo: string, number: number) => {
+    const git = await gitFor(threadId, repo)
+    await git.checkoutPullRequest(number)
+    return git.status()
+  })
+  handle('project.commitMessage', async (threadId: string, repo: string, ref: ModelRef) => {
+    const changes = await (await gitFor(threadId, repo)).changesForMessage()
+    const { adapter, info } = await models.resolve(ref)
+    return generateCommitMessage(adapter, info, changes)
+  })
+  handle('project.files', async (threadId: string) => (await gitFor(threadId)).listFiles())
+  handle('project.read', async (threadId: string, file: string) => (await gitFor(threadId)).read(file))
 
   handle('mcp.list', () => mcp.status())
   handle('mcp.add', async (json: string) => {
@@ -201,7 +255,7 @@ async function start(): Promise<void> {
   })
 
   handle('system.pickFolder', async () => {
-    const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const options: Electron.OpenDialogOptions = { title: 'Escolha a pasta do projeto', properties: ['openDirectory'] }
     const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
@@ -233,6 +287,8 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
+  // Gives the taskbar its own entry for this app, instead of grouping it with other Electron apps.
+  if (process.platform === 'win32') app.setAppUserModelId('dev.claudio.app')
   app.on('second-instance', () => {
     if (window?.isMinimized()) window.restore()
     window?.focus()
@@ -245,6 +301,7 @@ if (!app.requestSingleInstanceLock()) {
   })
   void app.whenReady().then(() => {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+    if (process.platform === 'darwin') app.dock?.setIcon(ICON)
     return start()
   })
 }

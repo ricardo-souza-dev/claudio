@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import {
-  MAIN_STREAM,
   type ApprovalRequest,
-  type LiveVoice,
   type McpStatus,
   type ModelListing,
   type ModelRef,
@@ -14,6 +12,7 @@ import {
   type UniApi,
   type UniEvent
 } from '../../shared/types'
+import { remoteErrorMessage } from './format'
 
 declare global {
   interface Window {
@@ -29,12 +28,11 @@ export interface LiveStream {
 }
 
 export interface LiveTurn extends LiveStream {
-  voices: Record<string, LiveStream>
-  council: { phase: 'voices' | 'synthesis' | 'done'; voices: LiveVoice[] } | null
+  startedAt: number
 }
 
 const EMPTY_STREAM: LiveStream = { text: '', reasoning: '' }
-const EMPTY_LIVE: LiveTurn = { ...EMPTY_STREAM, voices: {}, council: null }
+const EMPTY_LIVE: LiveTurn = { ...EMPTY_STREAM, startedAt: 0 }
 
 export interface AppState {
   ready: boolean
@@ -55,7 +53,7 @@ export interface AppState {
 
 const INITIAL: AppState = {
   ready: false,
-  prefs: { memory: '', lastModel: null, councilVoices: [], permissionMode: 'ask' },
+  prefs: { memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: false },
   providers: [],
   listing: { models: [], errors: {} },
   loadingModels: false,
@@ -72,7 +70,6 @@ const INITIAL: AppState = {
 
 interface Delta {
   threadId: string
-  stream: string
   kind: 'text' | 'reasoning'
   text: string
 }
@@ -111,21 +108,16 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
       return {
         ...state,
         running: { ...state.running, [event.threadId]: event.running },
-        live: event.running ? { ...state.live, [event.threadId]: EMPTY_LIVE } : state.live,
+        // Marked busy here first, and again when the main process confirms: the clock starts once.
+        live: event.running
+          ? { ...state.live, [event.threadId]: { ...EMPTY_LIVE, startedAt: state.running[event.threadId] ? (state.live[event.threadId]?.startedAt ?? Date.now()) : Date.now() } }
+          : state.live,
         notices: event.running ? { ...state.notices, [event.threadId]: [] } : state.notices,
         errors: event.running ? { ...state.errors, [event.threadId]: undefined } : state.errors,
         approvals: event.running ? state.approvals : { ...state.approvals, [event.threadId]: [] }
       }
-    case 'reset': {
-      const live = liveOf(state, event.threadId)
-      if (event.stream === MAIN_STREAM) return withLive(state, event.threadId, { ...live, ...EMPTY_STREAM })
-      return withLive(state, event.threadId, { ...live, voices: { ...live.voices, [event.stream]: EMPTY_STREAM } })
-    }
-    case 'council':
-      return withLive(state, event.threadId, {
-        ...liveOf(state, event.threadId),
-        council: event.phase === 'done' ? null : { phase: event.phase, voices: event.voices }
-      })
+    case 'reset':
+      return withLive(state, event.threadId, { ...liveOf(state, event.threadId), ...EMPTY_STREAM })
     case 'approval':
       return {
         ...state,
@@ -145,6 +137,8 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
       return { ...state, errors: { ...state.errors, [event.threadId]: event.text } }
     case 'mcp':
       return { ...state, mcp: event.servers }
+    case 'models-changed':
+      return state
     case 'delta':
       return applyDeltas(state, [event])
   }
@@ -152,14 +146,9 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
 
 function applyDeltas(state: AppState, deltas: Delta[]): AppState {
   let next = state
-  for (const { threadId, stream, kind, text } of deltas) {
+  for (const { threadId, kind, text } of deltas) {
     const live = liveOf(next, threadId)
-    if (stream === MAIN_STREAM) {
-      next = withLive(next, threadId, { ...live, [kind]: live[kind] + text })
-    } else {
-      const voice = live.voices[stream] ?? EMPTY_STREAM
-      next = withLive(next, threadId, { ...live, voices: { ...live.voices, [stream]: { ...voice, [kind]: voice[kind] + text } } })
-    }
+    next = withLive(next, threadId, { ...live, [kind]: live[kind] + text })
   }
   return next
 }
@@ -214,6 +203,7 @@ export function useAppStore() {
         return
       }
       flush()
+      if (event.type === 'models-changed') void refreshModels()
       dispatch({ type: 'event', event })
     })
 
@@ -263,12 +253,12 @@ export function useAppStore() {
   }, [])
 
   const removeThread = useCallback(
-    async (id: string, activeId: string | null, model: ModelRef | null) => {
+    async (id: string, activeId: string | null, model: ModelRef | null, workspace: string | null) => {
       const summaries = await api.threads.remove(id)
       dispatch({ type: 'patch', patch: { summaries } })
       if (id !== activeId) return
       if (summaries[0]) await openThread(summaries[0].id)
-      else await newThread(model)
+      else await newThread(model, workspace)
     },
     [newThread, openThread]
   )
@@ -279,10 +269,9 @@ export function useAppStore() {
   const send = useCallback((request: SendRequest) => {
     const { threadId } = request
     dispatch({ type: 'event', event: { type: 'run', threadId, running: true } })
-    api.chat.send(request).catch((error: Error) => {
-      const text = error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+    api.chat.send(request).catch((error: unknown) => {
       dispatch({ type: 'event', event: { type: 'run', threadId, running: false } })
-      dispatch({ type: 'event', event: { type: 'error', threadId, text } })
+      dispatch({ type: 'event', event: { type: 'error', threadId, text: remoteErrorMessage(error) } })
     })
   }, [])
 

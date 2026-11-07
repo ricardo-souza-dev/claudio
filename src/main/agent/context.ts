@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { describeProject } from '../project'
 
 const INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.cursorrules']
 const MAX_INSTRUCTION_CHARS = 32_000
@@ -21,7 +22,10 @@ export async function buildSystemPrompt(
 
   const files: string[] = []
   if (workspace) {
-    sections.push(`The working folder is ${workspace}. Paths in tool calls are relative to it.`)
+    sections.push(
+      `This conversation is about the project in the folder ${workspace}. Paths in tool calls are relative to it. Consider the project as a whole, and read what you need with your tools before answering about its code.`,
+      await describeProject(workspace)
+    )
     for (const name of INSTRUCTION_FILES) {
       const text = await readFile(path.join(workspace, name), 'utf8').catch(() => null)
       if (!text?.trim()) continue

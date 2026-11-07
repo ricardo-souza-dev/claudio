@@ -1,11 +1,11 @@
-import { AlertTriangle, ChevronRight, RotateCcw, Shuffle } from 'lucide-react'
+import { AlertTriangle, ChevronRight, FileText, RotateCcw, Shuffle } from 'lucide-react'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  modelKey,
+  PLAN_TOOL,
   sameModel,
   type ApprovalDecision,
   type ApprovalRequest,
-  type CouncilVoice,
+  type AttachmentPart,
   type Message,
   type ModelInfo,
   type ModelRef,
@@ -14,7 +14,7 @@ import {
   type ToolCallPart,
   type ToolResultPart
 } from '../../shared/types'
-import { modelLabel, providerLabel, shortToolName, toolSummary, usageLabel } from './format'
+import { formatFileSize, modelLabel, providerLabel, shortToolName, toolSummary, usageLabel } from './format'
 import { Markdown } from './Markdown'
 import { api, type LiveTurn } from './store'
 
@@ -36,6 +36,20 @@ const RISK_TITLE: Record<ApprovalRequest['risk'], string> = {
   write: 'Alterar este arquivo?',
   exec: 'Executar este comando?',
   external: 'Usar esta ferramenta externa?'
+}
+
+function SentAttachment({ part }: { part: AttachmentPart }) {
+  const [preview, setPreview] = useState<string | null>(null)
+  const image = part.mediaType.startsWith('image/')
+  useEffect(() => {
+    if (image) void api.attachments.preview(part.ref).then(setPreview)
+  }, [image, part.ref])
+  if (image && preview) return <img className="sent-image" src={preview} alt={part.name} title={part.name} />
+  return (
+    <span className="sent-file" title={part.name}>
+      <FileText size={13} aria-hidden /> {part.name} <span className="sent-size">{formatFileSize(part.size)}</span>
+    </span>
+  )
 }
 
 function Reasoning({ text, active }: { text: string; active?: boolean }) {
@@ -153,60 +167,6 @@ function ToolRow({
   )
 }
 
-function CouncilSummary({ voices, models }: { voices: CouncilVoice[]; models: ModelInfo[] }) {
-  const [selected, setSelected] = useState<string | null>(null)
-  const voice = voices.find((entry) => modelKey(entry.model) === selected)
-  const answered = voices.filter((entry) => !entry.error).length
-  return (
-    <div className="council-summary">
-      <div className="council-chips" role="tablist" aria-label="Respostas do conselho">
-        <span className="council-count">
-          {answered} {answered === 1 ? 'voz' : 'vozes'}
-        </span>
-        {voices.map((entry) => {
-          const key = modelKey(entry.model)
-          return (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={selected === key}
-              className={`chip${selected === key ? ' selected' : ''}${entry.error ? ' failed' : ''}`}
-              onClick={() => setSelected(selected === key ? null : key)}
-            >
-              {modelLabel(entry.model, models)}
-            </button>
-          )
-        })}
-      </div>
-      {voice && (
-        <div className="council-voice">{voice.error ? <p className="voice-error">{voice.error}</p> : <Markdown text={voice.text} />}</div>
-      )}
-    </div>
-  )
-}
-
-function LiveCouncil({ live, models }: { live: LiveTurn; models: ModelInfo[] }) {
-  const council = live.council!
-  return (
-    <div className={`council-live count-${Math.min(council.voices.length, 4)}`}>
-      {council.voices.map((voice) => {
-        const stream = live.voices[voice.key]
-        return (
-          <section className={`voice state-${voice.status}`} key={voice.key} aria-label={modelLabel(voice.model, models)}>
-            <header className="voice-header">
-              <span className="voice-name">{modelLabel(voice.model, models)}</span>
-              <span className="voice-provider">{providerLabel(voice.model, models)}</span>
-            </header>
-            <div className="voice-body">
-              {voice.error ? <p className="voice-error">{voice.error}</p> : stream?.text ? <Markdown text={stream.text} /> : <span className="waiting-dots">pensando</span>}
-            </div>
-          </section>
-        )
-      })}
-    </div>
-  )
-}
-
 interface AssistantProps {
   message: Message
   showHeader: boolean
@@ -225,6 +185,8 @@ function renderPart(part: Part, index: number, props: AssistantProps) {
     case 'text':
       return <Markdown key={index} text={part.text} />
     case 'tool_call':
+      // The task list is drawn above the message box, not as one more tool in the transcript.
+      if (part.name === PLAN_TOOL) return null
       return (
         <ToolRow
           key={`${part.id}-${index}`}
@@ -258,7 +220,6 @@ const AssistantMessage = memo(function AssistantMessage(props: AssistantProps) {
           )}
         </header>
       )}
-      {message.council && <CouncilSummary voices={message.council.voices} models={models} />}
       {message.parts.map((part, index) => renderPart(part, index, props))}
       {message.stop === 'aborted' && <div className="turn-note">Interrompido por você.</div>}
       {message.excluded && <div className="turn-note">Esta resposta fica fora do contexto dos próximos modelos.</div>}
@@ -304,6 +265,8 @@ export function Transcript({ thread, models, live, running, approvals, notices, 
 
   let previousAuthor: ModelRef | null = null
   let previousRole: Message['role'] | null = null
+  // The model whose name is showing for the current turn, so later steps can skip repeating it.
+  let namedInTurn: ModelRef | null = null
   const items = thread.messages.map((message) => {
     if (message.role === 'tool') {
       previousRole = 'tool'
@@ -311,18 +274,30 @@ export function Transcript({ thread, models, live, running, approvals, notices, 
     }
     if (message.role === 'user') {
       previousRole = 'user'
+      namedInTurn = null
       const text = message.parts.map((part) => (part.type === 'text' ? part.text : '')).join('')
       return (
         <article className="turn user" key={message.id}>
           <span className="node hollow" aria-hidden />
-          <div className="user-text">{text}</div>
+          {message.parts.some((part) => part.type === 'attachment') && (
+            <div className="sent-attachments">
+              {message.parts.flatMap((part) => (part.type === 'attachment' ? [<SentAttachment key={part.ref} part={part} />] : []))}
+            </div>
+          )}
+          {text && <div className="user-text">{text}</div>}
         </article>
       )
     }
-    const continued = previousRole === 'tool' && sameModel(previousAuthor, message.model)
+    const onlyPlan = message.parts.every((part) => part.type === 'tool_call' && part.name === PLAN_TOOL)
+    if (onlyPlan) {
+      previousRole = 'assistant'
+      return null
+    }
+    const continued = previousRole === 'tool' && sameModel(namedInTurn, message.model)
     const handoff = previousAuthor !== null && !sameModel(previousAuthor, message.model)
     previousAuthor = message.model ?? previousAuthor
     previousRole = 'assistant'
+    namedInTurn = message.model ?? namedInTurn
     return (
       <AssistantMessage
         key={message.id}
@@ -339,10 +314,9 @@ export function Transcript({ thread, models, live, running, approvals, notices, 
   })
 
   const liveTurn = live && (live.text || live.reasoning)
-  const lastIsTool = thread.messages.at(-1)?.role === 'tool'
-  const hasPendingWork = running && !liveTurn && !live?.council && approvals.length === 0
   const nextModel = thread.model
   const liveHandoff = previousAuthor !== null && !sameModel(previousAuthor, nextModel)
+  const liveContinues = thread.messages.at(-1)?.role === 'tool' && sameModel(namedInTurn, nextModel)
 
   return (
     <div
@@ -357,29 +331,19 @@ export function Transcript({ thread, models, live, running, approvals, notices, 
       <div className="transcript-inner">
         {items}
 
-        {live?.council && <LiveCouncil live={live} models={models} />}
-
         {liveTurn && (
-          <article className={`turn assistant live${lastIsTool && !liveHandoff ? ' continued' : ''}`}>
-            {!(lastIsTool && !liveHandoff) && (
+          <article className={`turn assistant live${liveContinues ? ' continued' : ''}`}>
+            {!liveContinues && (
               <header className="turn-header">
                 <span className={`node pulse${liveHandoff ? ' handoff' : ''}`} aria-hidden />
                 <span className="author">{modelLabel(nextModel, models)}</span>
                 <span className="provider">{providerLabel(nextModel, models)}</span>
                 {liveHandoff && <span className="handoff-tag">assumiu aqui</span>}
-                {live?.council?.phase === 'synthesis' && <span className="handoff-tag">unindo as vozes</span>}
               </header>
             )}
             {live.reasoning && <Reasoning text={live.reasoning} active={!live.text} />}
             {live.text && <Markdown text={live.text} />}
           </article>
-        )}
-
-        {hasPendingWork && (
-          <div className="working" role="status">
-            <span className="node pulse" aria-hidden />
-            {live?.council ? 'Unindo as vozes…' : 'Pensando…'}
-          </div>
         )}
 
         {notices.map((notice) => (

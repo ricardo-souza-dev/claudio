@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
-import type { Message, Part, StopReason } from '../../shared/types'
-import { contextOf, generatedCallId, safeToolId, textOf, toolCallsOf, toolResultsOf } from './history'
+import type { ChatCompletionContentPart, ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import { clampEffort, type Message, type Part, type StopReason } from '../../shared/types'
+import { attachmentAsText, contextOf, generatedCallId, isImage, isPdf, safeToolId, textOf, toolCallsOf, toolResultsOf } from './history'
 import { isTextModel, listOpenAiStyleModels } from './openai-models'
 import {
   AbortedError,
@@ -11,6 +11,21 @@ import {
   type ProviderAdapter,
   type ProviderConnection
 } from './types'
+
+/** Plain text stays a plain string: some compatible servers only accept the array form with images. */
+function userContent(message: Message, text: string): string | ChatCompletionContentPart[] | null {
+  const images: ChatCompletionContentPart[] = []
+  const texts: string[] = []
+  for (const part of message.parts) {
+    if (part.type !== 'attachment' || !part.data) continue
+    if (isImage(part)) images.push({ type: 'image_url', image_url: { url: `data:${part.mediaType};base64,${part.data}` } })
+    else if (isPdf(part)) texts.push(`[PDF anexado: ${part.name}. Este provedor não lê PDFs.]`)
+    else texts.push(attachmentAsText(part))
+  }
+  const combined = [...texts, text].filter(Boolean).join('\n\n')
+  if (images.length === 0) return combined || null
+  return [...images, ...(combined ? [{ type: 'text' as const, text: combined }] : [])]
+}
 
 export function toChatMessages(
   system: string,
@@ -27,7 +42,8 @@ export function toChatMessages(
     }
     const text = textOf(message.parts)
     if (message.role === 'user') {
-      if (text) result.push({ role: 'user', content: text })
+      const content = userContent(message, text)
+      if (content) result.push({ role: 'user', content })
       continue
     }
     const calls = toolCallsOf(message)
@@ -71,12 +87,14 @@ export function createChatAdapter(connection: ProviderConnection): ProviderAdapt
 
     async stream(request, onEvent): Promise<CompletionResult> {
       const { model, system, messages, tools, signal } = request
+      const effort = request.effort && model.efforts?.length ? clampEffort(request.effort, model.efforts) : undefined
       try {
         const stream = await client.chat.completions.create(
           {
             model: model.id,
             messages: toChatMessages(system, messages, idStyle),
             stream: true,
+            ...(effort ? { reasoning_effort: effort as 'low' | 'medium' | 'high' } : {}),
             ...(connection.quirks?.noStreamOptions ? {} : { stream_options: { include_usage: true } }),
             ...(tools.length > 0
               ? {

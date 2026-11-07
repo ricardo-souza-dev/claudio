@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { Message, ModelInfo, Part, ToolCallPart, ToolResultPart } from '../../shared/types'
+import type { AttachmentPart, Message, ModelInfo, Part, ToolCallPart, ToolResultPart } from '../../shared/types'
 
 const FLATTENED_RESULT_LIMIT = 4000
 
@@ -17,6 +17,20 @@ export function textOf(parts: Part[]): string {
     .filter((part): part is Extract<Part, { type: 'text' }> => part.type === 'text')
     .map((part) => part.text)
     .join('')
+}
+
+export function isImage(part: AttachmentPart): boolean {
+  return part.mediaType.startsWith('image/')
+}
+
+export function isPdf(part: AttachmentPart): boolean {
+  return part.mediaType === 'application/pdf'
+}
+
+/** Every protocol reads text attachments the same way: as text, with the file's name. */
+export function attachmentAsText(part: AttachmentPart): string {
+  const content = part.data ? Buffer.from(part.data, 'base64').toString('utf8') : ''
+  return `Arquivo anexado: ${part.name}\n\`\`\`\n${content}\n\`\`\``
 }
 
 export function toolCallsOf(message: Message): ToolCallPart[] {
@@ -75,9 +89,8 @@ export function contextOf(messages: Message[]): Message[] {
 }
 
 /**
- * Rewrites tool activity as plain text, for models taking part without tools (a
- * council synthesis, a model that rejects function calling). Provider-specific
- * wire data is dropped along with it.
+ * Rewrites tool activity as plain text, for a model that rejects function calling.
+ * Provider-specific wire data is dropped along with it.
  */
 export function flattenHistory(messages: Message[]): Message[] {
   const flat: Message[] = []
@@ -93,6 +106,11 @@ export function flattenHistory(messages: Message[]): Message[] {
         })
         .join('\n')
       flat.push({ id: message.id, role: 'user', parts: [{ type: 'text', text }], createdAt: message.createdAt })
+      continue
+    }
+    // What the user wrote and attached stays as it is: only tool activity becomes text.
+    if (message.role === 'user') {
+      flat.push(message)
       continue
     }
     const pieces: string[] = []

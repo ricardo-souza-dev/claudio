@@ -231,7 +231,6 @@ export class McpManager {
       const name = mcpToolName(connection.config.name, tool.name)
       return {
         name,
-        readOnly: false,
         description: tool.description ?? `Ferramenta ${tool.name} do servidor MCP ${connection.config.name}.`,
         schema: normalizeSchema(tool.inputSchema),
         // A server's own read-only annotation is only a claim, so it is not trusted.

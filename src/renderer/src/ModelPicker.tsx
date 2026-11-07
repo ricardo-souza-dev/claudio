@@ -1,15 +1,20 @@
-import { Check, RefreshCw, Search } from 'lucide-react'
+import { Check, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { chooseAutoModel, estimateTurn, unfitReason, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, type ModelInfo, type ModelListing, type ModelRef } from '../../shared/types'
-import { formatTokens } from './format'
+import { EFFORT_LABELS, formatEstimatedSeconds, formatEstimatedUsd, formatTokens } from './format'
 
 interface ModelPickerProps {
   listing: ModelListing
   loading: boolean
-  /** One choice closes the picker; several toggle, for the council's voices. */
-  mode: 'single' | 'multiple'
   title: string
-  selected: ModelRef[]
+  current: ModelRef | null
+  /** The model already writing this conversation, which is costly to step down from. */
+  inConversation: ModelRef | null
+  /** The message being written and the conversation so far, which the estimates are for. */
+  task: TaskInfo
+  /** Present when Claudio may choose the model by itself, for each message. */
+  auto?: { on: boolean; onSelect(): void }
   onSelect(model: ModelRef): void
   onRefresh(): void
   onClose(): void
@@ -26,7 +31,35 @@ function groupByProvider(models: ModelInfo[]): { name: string; models: ModelInfo
   return [...groups.values()]
 }
 
-export function ModelPicker({ listing, loading, mode, title, selected, onSelect, onRefresh, onClose, onOpenSettings }: ModelPickerProps) {
+function effortRange(model: ModelInfo): string {
+  if (!model.efforts?.length) return '—'
+  return `até ${EFFORT_LABELS[model.efforts.at(-1)!]}`
+}
+
+/** The columns of a model row. */
+function Figures({ model, task }: { model: ModelInfo; task: TaskInfo }) {
+  const unfit = unfitReason(model, task)
+  const { cost, seconds } = estimateTurn(model, task)
+  if (unfit) return <span className="picker-unfit">{unfit}</span>
+  return (
+    <>
+      <span className="picker-figure" title="Força máxima que este modelo aceita">
+        {effortRange(model)}
+      </span>
+      <span className="picker-figure" title={model.pricing ? `Por milhão de tokens: US$ ${model.pricing.input} de entrada e US$ ${model.pricing.output} de saída` : 'Preço desconhecido'}>
+        {cost === null ? '—' : formatEstimatedUsd(cost)}
+      </span>
+      <span className="picker-figure" title={seconds === null ? 'Aparece depois que este modelo responder aqui pela primeira vez' : 'Medido nas respostas anteriores deste modelo'}>
+        {seconds === null ? '—' : formatEstimatedSeconds(seconds)}
+      </span>
+      <span className="picker-figure" title="Tamanho máximo do contexto">
+        {model.contextWindow ? formatTokens(model.contextWindow) : '—'}
+      </span>
+    </>
+  )
+}
+
+export function ModelPicker({ listing, loading, title, current, inConversation, task, auto, onSelect, onRefresh, onClose, onOpenSettings }: ModelPickerProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -44,7 +77,13 @@ export function ModelPicker({ listing, loading, mode, title, selected, onSelect,
   const groups = useMemo(() => groupByProvider(filtered), [filtered])
   // Rows are numbered in display order, so the arrow keys follow what is on screen.
   const ordered = useMemo(() => groups.flatMap((group) => group.models), [groups])
-  const selectedKeys = new Set(selected.map(modelKey))
+  const currentKey = current ? modelKey(current) : null
+
+  const recommendation = useMemo(() => {
+    const choice = chooseAutoModel(listing.models, task, inConversation)
+    const model = choice && listing.models.find((entry) => modelKey(entry) === modelKey(choice.model))
+    return choice && model ? { model, reason: choice.reason } : null
+  }, [listing.models, task, inConversation])
 
   useEffect(() => setCursor(0), [query])
   useEffect(() => {
@@ -54,7 +93,7 @@ export function ModelPicker({ listing, loading, mode, title, selected, onSelect,
   const choose = (model: ModelInfo | undefined): void => {
     if (!model) return
     onSelect({ provider: model.provider, id: model.id })
-    if (mode === 'single') onClose()
+    onClose()
   }
 
   const errors = Object.entries(listing.errors)
@@ -98,6 +137,44 @@ export function ModelPicker({ listing, loading, mode, title, selected, onSelect,
           </button>
         ))}
 
+        {auto && !query && (
+          <button
+            className={`picker-auto${auto.on ? ' selected' : ''}`}
+            onClick={() => {
+              auto.onSelect()
+              onClose()
+            }}
+          >
+            <span className="picker-check" aria-hidden>
+              {auto.on && <Check size={13} />}
+            </span>
+            <span className="picker-label">Automático</span>
+            <span className="picker-id">escolhe pela tarefa, pelo contexto e pelo preço, a cada mensagem</span>
+          </button>
+        )}
+
+        {recommendation && !query && (
+          <button className="picker-row picker-recommended" onClick={() => choose(recommendation.model)}>
+            <span className="picker-check" aria-hidden>
+              <Sparkles size={13} />
+            </span>
+            <span className="picker-name">
+              <span className="picker-label">{recommendation.model.label}</span>
+              <span className="picker-id">recomendado: {recommendation.reason}</span>
+            </span>
+            <Figures model={recommendation.model} task={task} />
+          </button>
+        )}
+
+        <div className="picker-columns" aria-hidden>
+          <span />
+          <span />
+          <span>Força</span>
+          <span>Custo</span>
+          <span>Tempo</span>
+          <span>Contexto</span>
+        </div>
+
         <div className="picker-list" ref={list}>
           {groups.map((group) => (
             <div key={group.name}>
@@ -109,16 +186,18 @@ export function ModelPicker({ listing, loading, mode, title, selected, onSelect,
                 return (
                   <button
                     key={key}
-                    className={`picker-row${position === cursor ? ' cursor' : ''}${selectedKeys.has(key) ? ' selected' : ''}`}
+                    className={`picker-row${position === cursor ? ' cursor' : ''}${key === currentKey ? ' selected' : ''}`}
                     onMouseMove={() => setCursor(position)}
                     onClick={() => choose(model)}
                   >
                     <span className="picker-check" aria-hidden>
-                      {selectedKeys.has(key) && <Check size={13} />}
+                      {key === currentKey && !auto?.on && <Check size={13} />}
                     </span>
-                    <span className="picker-label">{model.label}</span>
-                    {model.label !== model.id && <span className="picker-id">{model.id}</span>}
-                    {model.contextWindow ? <span className="picker-context">{formatTokens(model.contextWindow)}</span> : null}
+                    <span className="picker-name">
+                      <span className="picker-label">{model.label}</span>
+                      {model.label !== model.id && <span className="picker-id">{model.id}</span>}
+                    </span>
+                    <Figures model={model} task={task} />
                   </button>
                 )
               })}
@@ -144,16 +223,7 @@ export function ModelPicker({ listing, loading, mode, title, selected, onSelect,
         </div>
 
         <div className="picker-footer">
-          <span>
-            {listing.models.length} {listing.models.length === 1 ? 'modelo' : 'modelos'}
-          </span>
-          {mode === 'multiple' ? (
-            <button className="button primary" onClick={onClose}>
-              Concluir ({selected.length})
-            </button>
-          ) : (
-            <span>Enter escolhe · Esc fecha</span>
-          )}
+          <span>Custo e tempo são estimativas para a próxima mensagem. O tempo vem das respostas já dadas aqui.</span>
         </div>
       </div>
     </div>

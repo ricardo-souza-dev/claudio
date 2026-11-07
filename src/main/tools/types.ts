@@ -1,14 +1,14 @@
 import type { ApprovalPreview, PermissionMode, Risk } from '../../shared/types'
 import type { ToolSpec } from '../providers/types'
 
+export { PLAN_TOOL } from '../../shared/types'
+
 export interface ToolResult {
   content: string
   isError?: boolean
 }
 
 export interface Tool extends ToolSpec {
-  /** Read-only built-ins may run without a person present, as council voices do. */
-  readOnly: boolean
   risk(input: Record<string, unknown>): Risk
   preview(input: Record<string, unknown>): ApprovalPreview
   run(input: Record<string, unknown>, signal: AbortSignal): Promise<ToolResult>
