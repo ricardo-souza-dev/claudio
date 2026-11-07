@@ -1,0 +1,44 @@
+{
+  "name": "claudio",
+  "productName": "Claudio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Uma só conversa, memória e caixa de ferramentas para qualquer modelo de IA.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "postinstall": "install-electron",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "electron-vite build && playwright test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@google/genai": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ajv": "^8.20.0",
+    "lucide-react": "^1.70.0",
+    "openai": "^7.53.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.3",
+    "electron-vite": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
+    "zod": "^4.6.7"
+  }
+}

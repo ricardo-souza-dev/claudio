@@ -1,0 +1,252 @@
+// The canonical model of a conversation. Every provider adapter translates to
+// and from these types, which is what lets one thread pass between models.
+
+export type Protocol = 'anthropic' | 'openai-responses' | 'openai-chat' | 'gemini'
+
+export interface ModelRef {
+  provider: string
+  id: string
+}
+
+export interface ModelInfo extends ModelRef {
+  label: string
+  providerName: string
+  contextWindow?: number
+  maxOutput?: number
+  /** The model can stream a readable summary of its reasoning. */
+  thinking?: boolean
+  /** The model accepts an explicit effort level. */
+  effort?: boolean
+}
+
+export interface Usage {
+  input: number
+  output: number
+  cached?: number
+}
+
+export type StopReason = 'end' | 'tool_use' | 'length' | 'refusal' | 'aborted' | 'error'
+
+export interface TextPart {
+  type: 'text'
+  text: string
+}
+export interface ReasoningPart {
+  type: 'reasoning'
+  text: string
+}
+export interface ToolCallPart {
+  type: 'tool_call'
+  id: string
+  name: string
+  input: unknown
+  /** Set when the model produced arguments that could not be parsed. */
+  invalid?: string
+}
+export interface ToolResultPart {
+  type: 'tool_result'
+  callId: string
+  name: string
+  content: string
+  isError?: boolean
+  /** Stopped by the user or by the permission mode, rather than failing. */
+  denied?: boolean
+}
+export type Part = TextPart | ReasoningPart | ToolCallPart | ToolResultPart
+
+export interface CouncilVoice {
+  model: ModelRef
+  text: string
+  usage?: Usage
+  error?: string
+}
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant' | 'tool'
+  parts: Part[]
+  createdAt: number
+  /** The model that actually wrote this message. */
+  model?: ModelRef
+  usage?: Usage
+  stop?: StopReason
+  /**
+   * The provider's own wire format, replayed verbatim when the same provider
+   * (and for some protocols, the same model) continues the thread. It carries
+   * what the canonical parts cannot: signed thinking and encrypted reasoning.
+   */
+  raw?: { provider: string; model: string; data: unknown }
+  /** Individual answers behind a council synthesis. Never replayed to models. */
+  council?: { voices: CouncilVoice[] }
+  /** A refused turn is shown to the user but never replayed to any model. */
+  excluded?: boolean
+}
+
+export interface Thread {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  workspace: string | null
+  model: ModelRef | null
+  /** Rendered once at the first send and then frozen, so every model sees the same bytes. */
+  system: string | null
+  contextFiles: string[]
+  /** Tools the user allowed for the rest of this conversation. */
+  allowedTools: string[]
+  messages: Message[]
+}
+
+export interface ThreadSummary {
+  id: string
+  title: string
+  updatedAt: number
+  workspace: string | null
+}
+
+export type PermissionMode = 'ask' | 'auto-edit' | 'read-only'
+export type Risk = 'read' | 'sensitive' | 'write' | 'exec' | 'external'
+export type ApprovalDecision = 'allow' | 'allow-always' | 'deny'
+
+export type ApprovalPreview =
+  | { kind: 'command'; command: string; cwd?: string }
+  | { kind: 'edit'; path: string; before: string; after: string }
+  | { kind: 'write'; path: string; content: string; truncated: boolean }
+  | { kind: 'path'; path: string }
+  | { kind: 'json'; json: string }
+
+export interface ApprovalRequest {
+  id: string
+  callId: string
+  tool: string
+  risk: Risk
+  preview: ApprovalPreview
+}
+
+export type SendRequest = {
+  threadId: string
+  /** Empty means: run again from the last user message. */
+  text: string
+  permissionMode: PermissionMode
+} & ({ mode: 'agent'; model: ModelRef } | { mode: 'council'; model: ModelRef; voices: ModelRef[] })
+
+export type VoiceStatus = 'running' | 'done' | 'error'
+export interface LiveVoice {
+  key: string
+  model: ModelRef
+  status: VoiceStatus
+  error?: string
+}
+
+export type UniEvent =
+  | { type: 'thread'; thread: Thread }
+  | { type: 'threads'; threads: ThreadSummary[] }
+  | { type: 'run'; threadId: string; running: boolean }
+  | { type: 'delta'; threadId: string; stream: string; kind: 'text' | 'reasoning'; text: string }
+  | { type: 'reset'; threadId: string; stream: string }
+  | { type: 'council'; threadId: string; phase: 'voices' | 'synthesis' | 'done'; voices: LiveVoice[] }
+  | { type: 'approval'; threadId: string; approval: ApprovalRequest }
+  | { type: 'approval-done'; threadId: string; id: string }
+  | { type: 'notice'; threadId: string; text: string }
+  | { type: 'error'; threadId: string; text: string }
+  | { type: 'mcp'; servers: McpStatus[] }
+
+export const MAIN_STREAM = 'main'
+
+export interface ProviderView {
+  id: string
+  name: string
+  protocol: Protocol
+  baseUrl: string
+  defaultBaseUrl: string
+  custom: boolean
+  local: boolean
+  needsKey: boolean
+  keySource: 'saved' | 'env' | null
+  envKey?: string
+  keyUrl?: string
+}
+
+export interface ProviderTest {
+  ok: boolean
+  count?: number
+  error?: string
+}
+
+export interface ModelListing {
+  models: ModelInfo[]
+  errors: Record<string, string>
+}
+
+export interface McpStatus {
+  name: string
+  transport: 'stdio' | 'http'
+  /** The command line or URL, with no secret values. */
+  target: string
+  secretNames: string[]
+  status: 'connecting' | 'connected' | 'error'
+  error?: string
+  tools: { name: string; description: string }[]
+}
+
+export interface Preferences {
+  memory: string
+  lastModel: ModelRef | null
+  councilVoices: ModelRef[]
+  permissionMode: PermissionMode
+}
+
+/** Everything the renderer may ask of the main process. Secrets only ever flow inward. */
+export interface UniApi {
+  platform: string
+  prefs: {
+    get(): Promise<Preferences>
+    set(patch: Partial<Preferences>): Promise<Preferences>
+  }
+  providers: {
+    list(): Promise<ProviderView[]>
+    setKey(id: string, key: string | null): Promise<ProviderView[]>
+    setBaseUrl(id: string, baseUrl: string | null): Promise<ProviderView[]>
+    addCustom(input: { name: string; protocol: Protocol; baseUrl: string; key?: string }): Promise<ProviderView[]>
+    removeCustom(id: string): Promise<ProviderView[]>
+    test(id: string): Promise<ProviderTest>
+  }
+  models: {
+    list(refresh?: boolean): Promise<ModelListing>
+  }
+  threads: {
+    list(): Promise<ThreadSummary[]>
+    get(id: string): Promise<Thread | null>
+    create(workspace: string | null, model: ModelRef | null): Promise<Thread>
+    remove(id: string): Promise<ThreadSummary[]>
+    rename(id: string, title: string): Promise<void>
+    setWorkspace(id: string, workspace: string | null): Promise<Thread>
+    setModel(id: string, model: ModelRef): Promise<void>
+  }
+  chat: {
+    send(request: SendRequest): Promise<void>
+    stop(threadId: string): Promise<void>
+    respond(threadId: string, approvalId: string, decision: ApprovalDecision): Promise<void>
+  }
+  mcp: {
+    list(): Promise<McpStatus[]>
+    /** Accepts the common { "mcpServers": { ... } } JSON format. */
+    add(json: string): Promise<McpStatus[]>
+    remove(name: string): Promise<McpStatus[]>
+    reconnect(name: string): Promise<McpStatus[]>
+  }
+  system: {
+    pickFolder(): Promise<string | null>
+    openExternal(url: string): Promise<void>
+    toolCount(workspace: string | null): Promise<number>
+  }
+  on(listener: (event: UniEvent) => void): () => void
+}
+
+export function modelKey(ref: ModelRef): string {
+  return `${ref.provider}/${ref.id}`
+}
+
+export function sameModel(a: ModelRef | null | undefined, b: ModelRef | null | undefined): boolean {
+  return !!a && !!b && a.provider === b.provider && a.id === b.id
+}
