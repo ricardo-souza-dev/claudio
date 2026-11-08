@@ -1546,11 +1546,12 @@ test('interactive terminals: sessions follow conversations and close when their 
   const second = await page.evaluate(async () => (await window.uni.terminal.list())[0])
   expect(second.workspace).toBe(another)
   expect(second.id).not.toBe(first.id)
+  await page.getByLabel('Mensagem', { exact: true }).click()
   await pickModel(page, 'Claude Simulado')
   await send(page, 'Olá')
   await idle(page)
   const oldThread = second.threadId
-  await page.getByRole('button', { name: 'Nova conversa (Ctrl+N)' }).click()
+  await page.locator('.new-thread').click()
   await expect.poll(() => page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(2)
   const currentThread = await page.evaluate(async () => {
     const sessions = await window.uni.terminal.list()
