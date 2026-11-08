@@ -1,5 +1,5 @@
-import { Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Trash2, Wrench } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronRight, Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Trash2, Wrench } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { chooseAutoModel, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, NEW_THREAD_TITLE, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
 import { summarizeUsage } from '../../shared/usage'
@@ -96,6 +96,19 @@ export function App() {
   const [toolCount, setToolCount] = useState(0)
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
   const [projectError, setProjectError] = useState<string | null>(null)
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string | null>>(() => new Set())
+  const projectGroupsId = useId()
+  // Switching to or creating a conversation reveals it, without preventing manual collapse.
+  useEffect(() => {
+    const workspace = thread?.workspace
+    if (workspace === undefined) return
+    setCollapsedProjects((current) => {
+      if (!current.has(workspace)) return current
+      const next = new Set(current)
+      next.delete(workspace)
+      return next
+    })
+  }, [thread?.id, thread?.workspace])
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({})
   const [pickerDraft, setPickerDraft] = useState({ text: '', hasImages: false })
   const [wide, setWide] = useState(() => window.innerWidth >= PANEL_MIN_WIDTH)
@@ -273,20 +286,31 @@ export function App() {
         </div>
         <nav className="thread-list" aria-label="Conversas por projeto">
           {groups.length > 0 && <div className="sidebar-section-label">Projetos</div>}
-          {groups.map((group) => {
+          {groups.map((group, index) => {
             const name = group.workspace ? folderName(group.workspace) : 'Sem projeto'
+            const open = !collapsedProjects.has(group.workspace)
+            const groupId = `${projectGroupsId}-${index}`
             return (
               <div className="sidebar-project" key={group.workspace ?? 'sem-projeto'}>
                 <div className="thread-group" title={group.workspace ?? undefined}>
-                  <Folder size={13} aria-hidden />
-                  <span className="thread-group-name">{name}</span>
-                  <span className="thread-group-count" aria-label={`${group.threads.length} ${group.threads.length === 1 ? 'conversa' : 'conversas'}`}>{group.threads.length}</span>
+                  <button className="thread-group-toggle" aria-label={`Conversas de ${name}`} aria-expanded={open} aria-controls={groupId} onClick={() => setCollapsedProjects((current) => {
+                    const next = new Set(current)
+                    if (next.has(group.workspace)) next.delete(group.workspace)
+                    else next.add(group.workspace)
+                    return next
+                  })}>
+                    <ChevronRight size={12} className={`chevron${open ? ' rotated' : ''}`} aria-hidden />
+                    <Folder size={13} aria-hidden />
+                    <span className="thread-group-name">{name}</span>
+                    <span className="thread-group-count" aria-label={`${group.threads.length} ${group.threads.length === 1 ? 'conversa' : 'conversas'}`}>{group.threads.length}</span>
+                  </button>
                   {group.workspace && (
                     <button className="thread-group-add" aria-label={`Nova conversa em ${name}`} title={`Nova conversa em ${name}`} onClick={() => void store.newThread(model, group.workspace)}>
                       <Plus size={13} />
                     </button>
                   )}
                 </div>
+                <div id={groupId} hidden={!open}>
                 {group.threads.map((summary) => (
                   <div key={summary.id} className={`thread-item${summary.id === thread.id ? ' active' : ''}`} onMouseLeave={() => setConfirmingDelete(null)}>
                     <button className="thread-open" title={summary.title} onClick={() => void store.openThread(summary.id)} aria-current={summary.id === thread.id}>
@@ -312,6 +336,7 @@ export function App() {
                     )}
                   </div>
                 ))}
+                </div>
               </div>
             )
           })}

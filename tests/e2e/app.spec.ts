@@ -1299,8 +1299,22 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await expect(deleteFirst).toBeFocused()
   await expect(deleteFirst).toHaveCSS('opacity', '1')
 
-  // A new conversation stays in the same project, listed under its name.
+  // The wider sidebar lets project headings toggle their conversations by mouse or keyboard.
+  expect((await sidebar.boundingBox())!.width).toBe(280)
+  const projectToggle = sidebar.getByRole('button', { name: `Conversas de ${path.basename(workspace)}`, exact: true })
+  await expect(projectToggle).toHaveAttribute('aria-expanded', 'true')
+  await projectToggle.click()
+  await expect(projectToggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(sidebar.locator('.thread-open').first()).toBeHidden()
+  await expect(sidebar.locator('.thread-group-count')).toHaveText('1')
+  await projectToggle.press('Enter')
+  await expect(sidebar.locator('.thread-open').first()).toBeVisible()
+  await projectToggle.press('Space')
+  await expect(sidebar.locator('.thread-open').first()).toBeHidden()
+
+  // A new conversation reveals its project, even when the group was collapsed.
   await page.keyboard.press('Control+n')
+  await expect(projectToggle).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByRole('heading', { name: 'Claudio, o queridinho dos devs.' })).toBeVisible()
   await send(page, 'Conversa número dois')
   await idle(page)
@@ -1322,6 +1336,10 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await send(page, 'Conversa no outro projeto')
   await idle(page)
   await expect(page.locator('.thread-group')).toHaveCount(2)
+  await projectToggle.click()
+  await expect(sidebar.locator('.thread-open', { hasText: 'Conversa número um' })).toBeHidden()
+  await expect(sidebar.locator('.thread-open', { hasText: 'Conversa no outro projeto' })).toBeVisible()
+  await projectToggle.click()
   await shot(page, '17-dois-projetos')
   await page.locator('.thread-item', { hasText: 'Conversa no outro projeto' }).hover()
   await page.getByRole('button', { name: 'Apagar “Conversa no outro projeto”' }).click()

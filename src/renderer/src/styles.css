@@ -153,12 +153,12 @@ button:disabled {
 
 .app {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   height: 100%;
 }
 
 .app.with-panel {
-  grid-template-columns: 244px minmax(0, 1fr) 320px;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
 }
 .app.with-panel .topbar {
   padding-right: 18px;
@@ -1049,14 +1049,29 @@ button:disabled {
 .thread-group {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 3px;
   min-height: 32px;
   margin-bottom: 4px;
-  padding: 4px 5px 4px 9px;
+  padding: 0 5px 0 0;
   font: 500 11.5px/1.5 var(--sans);
   color: var(--ink-2);
 }
-.thread-group > svg {
+.thread-group-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 5px;
+  border-radius: 5px;
+  text-align: left;
+  font: inherit;
+}
+.thread-group-toggle:hover {
+  background: var(--bg-hover);
+}
+.thread-group-toggle > svg {
   flex: none;
   color: var(--ink-3);
 }
