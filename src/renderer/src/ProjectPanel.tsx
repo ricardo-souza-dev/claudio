@@ -1,5 +1,5 @@
-import { ArrowDown, ArrowDownUp, ArrowUp, Check, CheckCircle2, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowDownUp, ArrowUp, Check, CheckCircle2, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, MoreHorizontal, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { GitAction, GitFile, GitStatus, ModelRef, PrListing, ProjectFile, ProjectRepos, RepoRef } from '../../shared/types'
 import { folderName, remoteErrorMessage, timeAgo } from './format'
 import { api } from './store'
@@ -308,6 +308,77 @@ function SyncButton({ status, busy, disabled = false, onSync }: { status: GitSta
 
 const canSync = (status: GitStatus): boolean => status.hasRemote && status.branch !== null
 
+function GitMenu({ status, busy, onAct, onNewBranch }: { status: GitStatus; busy: boolean; onAct(action: GitAction): void; onNewBranch(): void }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const id = useId()
+
+  useEffect(() => {
+    if (!open) return
+    menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    const outside = (event: PointerEvent): void => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setOpen(false)
+        trigger.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', escape, true)
+    }
+  }, [open])
+
+  const choose = (action: () => void): void => {
+    setOpen(false)
+    trigger.current?.focus()
+    action()
+  }
+
+  return (
+    <div className="git-menu" ref={root} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false)
+    }}>
+      <button ref={trigger} className="icon-button" aria-label="Mais ações do Git" title="Mais ações do Git" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} disabled={busy} onClick={() => setOpen(!open)} onKeyDown={(event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault()
+          setOpen(true)
+        }
+      }}>
+        <MoreHorizontal size={15} aria-hidden />
+      </button>
+      {open && (
+        <div ref={menu} id={id} className="git-menu-items" role="menu" aria-label="Ações do Git" onKeyDown={(event) => {
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+          const index = items.indexOf(document.activeElement as HTMLButtonElement)
+          let next: number
+          if (event.key === 'ArrowDown') next = (index + 1) % items.length
+          else if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length
+          else if (event.key === 'Home') next = 0
+          else if (event.key === 'End') next = items.length - 1
+          else return
+          event.preventDefault()
+          items[next]?.focus()
+        }}>
+          <button role="menuitem" disabled={busy || !status.hasRemote || !status.upstream} onClick={() => choose(() => onAct({ type: 'pull' }))}>Pull</button>
+          <button role="menuitem" disabled={busy || !canSync(status)} onClick={() => choose(() => onAct({ type: 'push' }))}>Push</button>
+          <button role="menuitem" disabled={busy || !status.hasRemote} onClick={() => choose(() => onAct({ type: 'fetch' }))}>Fetch</button>
+          <div role="separator" />
+          <button role="menuitem" disabled={busy} onClick={() => choose(onNewBranch)}>Nova branch</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GitTab({
   threadId,
   repo,
@@ -388,10 +459,9 @@ function GitTab({
             </optgroup>
           )}
         </select>
+        {status.hasRemote && !status.upstream && <span className="git-local">Só local</span>}
         {withSync && canSync(status) && <SyncButton status={status} busy={busy === 'sync'} disabled={busy !== null} onSync={() => void act({ type: 'sync' })} />}
-        <button className="icon-button" aria-label="Nova branch" title="Nova branch" onClick={() => setNewBranch(newBranch === null ? '' : null)}>
-          <Plus size={13} />
-        </button>
+        <GitMenu status={status} busy={busy !== null} onAct={(action) => void act(action)} onNewBranch={() => setNewBranch('')} />
       </div>
       {newBranch !== null && (
         <input
@@ -412,34 +482,6 @@ function GitTab({
         />
       )}
 
-      {status.hasRemote && (
-        <div className="git-sync">
-          <span className="git-counts" title={status.upstream ? `Comparado a ${status.upstream}` : 'Esta branch ainda não está no remoto'}>
-            {status.upstream ? (
-              status.ahead === 0 && status.behind === 0 ? (
-                <><Check size={12} aria-hidden /> Em dia</>
-              ) : (
-                <>
-                  <span><ArrowUp size={11} aria-hidden /> {status.ahead}</span>
-                  <span><ArrowDown size={11} aria-hidden /> {status.behind}</span>
-                </>
-              )
-            ) : (
-              'Só local'
-            )}
-          </span>
-          <button className="git-button" disabled={busy !== null} onClick={() => void act({ type: 'fetch' })}>
-            Fetch
-          </button>
-          <button className="git-button" disabled={busy !== null || !status.upstream} onClick={() => void act({ type: 'pull' })}>
-            Pull
-          </button>
-          <button className="git-button" disabled={busy !== null} onClick={() => void act({ type: 'push' })}>
-            Push
-          </button>
-        </div>
-      )}
-
       {busy && <p className="panel-empty">{busy === 'sync' ? 'Sincronizando…' : `Executando ${busy}…`}</p>}
       {problem && (
         <p className="result failed panel-problem" role="alert">
@@ -447,20 +489,13 @@ function GitTab({
         </p>
       )}
 
-      <Section title="Preparadas" count={staged.length} actions={staged.length > 0 ? <button className="panel-link" onClick={() => void act({ type: 'unstage', paths: staged.map((file) => file.path) })}>Tirar todas</button> : undefined}>
-        {staged.length > 0 && (
-          <ul className="git-files">
-            {staged.map((file) => (
-              <ChangeRow key={file.path} file={file} staged onOpen={() => onView({ kind: 'diff', repo, path: file.path, staged: true })} onAct={(action) => void act(action)} />
-            ))}
-          </ul>
-        )}
+      <div className="commit-form">
         <div className="commit-box">
           <textarea
             className="panel-input commit-message"
             aria-label="Texto do commit"
             placeholder="Mensagem do commit"
-            rows={message.includes('\n') ? 6 : 2}
+            rows={message.includes('\n') ? Math.min(6, message.split('\n').length) : 1}
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
@@ -472,7 +507,6 @@ function GitTab({
             }}
           />
           <div className="commit-box-footer">
-            <span className="commit-hint">{staged.length > 0 ? `${staged.length} ${staged.length === 1 ? 'arquivo no commit' : 'arquivos no commit'}` : 'Prepare os arquivos para começar'}</span>
             <button
               className="commit-generate"
               disabled={generating || !commitModel || status.files.length === 0}
@@ -487,7 +521,6 @@ function GitTab({
               onClick={() => void generateMessage()}
             >
               {generating ? <Loader2 size={13} className="spin" aria-hidden /> : <Sparkles size={13} aria-hidden />}
-              <span>{generating ? 'Gerando…' : 'Gerar com IA'}</span>
             </button>
           </div>
         </div>
@@ -501,7 +534,17 @@ function GitTab({
           <span>{busy === 'commit' ? 'Criando commit…' : busy === 'push' ? 'Enviando…' : pushPending ? 'Push' : 'Fazer commit'}</span>
           <kbd aria-hidden>Ctrl ↵</kbd>
         </button>
-      </Section>
+      </div>
+
+      {staged.length > 0 && (
+        <Section title="Preparadas" count={staged.length} actions={<button className="panel-link" onClick={() => void act({ type: 'unstage', paths: staged.map((file) => file.path) })}>Tirar todas</button>}>
+          <ul className="git-files">
+            {staged.map((file) => (
+              <ChangeRow key={file.path} file={file} staged onOpen={() => onView({ kind: 'diff', repo, path: file.path, staged: true })} onAct={(action) => void act(action)} />
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section title="Alterações" count={changed.length} actions={changed.length > 0 ? <button className="panel-link" onClick={() => void act({ type: 'stage', paths: changed.map((file) => file.path) })}>Preparar todas</button> : undefined}>
         {changed.length === 0 ? (

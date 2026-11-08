@@ -395,15 +395,59 @@ button:disabled {
 .git-workspace {
   min-width: 0;
 }
+.git-workspace > .panel-section {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+.git-workspace > .panel-section > .panel-section-head {
+  min-height: 20px;
+  margin-bottom: 2px;
+}
 .git-branch {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  background: var(--bg);
+  gap: 4px;
+  padding: 2px 0;
   color: var(--ink-2);
+}
+.git-menu {
+  position: relative;
+  flex: none;
+}
+.git-menu-items {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 3px);
+  right: 0;
+  width: 170px;
+  padding: 4px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 6px 20px #0003;
+}
+.git-menu-items > button {
+  display: block;
+  width: 100%;
+  padding: 5px 9px;
+  border-radius: 3px;
+  text-align: left;
+  font-size: 12px;
+}
+.git-menu-items > button:hover:not(:disabled),
+.git-menu-items > button:focus-visible {
+  background: var(--bg-hover);
+  outline: 1px solid var(--thread);
+  outline-offset: -1px;
+}
+.git-menu-items > button:disabled {
+  color: var(--ink-3);
+  opacity: 0.6;
+}
+.git-menu-items > [role='separator'] {
+  margin: 4px 0;
+  border-top: 1px solid var(--rule);
 }
 .git-branch > svg {
   flex: none;
@@ -424,35 +468,10 @@ button:disabled {
   font-family: var(--mono);
   font-size: 12.5px;
 }
-.git-sync {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-top: 8px;
-}
-.git-counts {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: 400 11px var(--sans);
+.git-local {
+  flex: none;
+  font-size: 10px;
   color: var(--ink-3);
-}
-.git-counts > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.git-sync .git-button {
-  padding: 3px 7px;
-  border-color: transparent;
-  background: transparent;
-  font: 400 11px var(--sans);
-  color: var(--ink-2);
-}
-.git-sync .git-button:not(:disabled):hover {
-  border-color: var(--rule);
-  color: var(--ink);
 }
 .git-button {
   padding: 2px 8px;
@@ -548,8 +567,12 @@ button:disabled {
 .code-conflict {
   color: var(--danger);
 }
-.commit-box {
+.commit-form {
   margin-top: 6px;
+}
+.commit-box {
+  position: relative;
+  margin-top: 0;
   overflow: hidden;
   border: 1px solid var(--rule-strong);
   border-radius: 8px;
@@ -560,8 +583,8 @@ button:disabled {
   box-shadow: 0 0 0 2px var(--thread-soft);
 }
 .commit-message {
-  min-height: 76px;
-  padding: 10px 11px;
+  min-height: 28px;
+  padding: 4px 32px 4px 7px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -569,18 +592,11 @@ button:disabled {
   line-height: 1.6;
 }
 .commit-box-footer {
+  position: absolute;
+  top: 2px;
+  right: 3px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 5px 8px 7px;
-}
-.commit-hint {
-  flex: 1 1 100px;
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--ink-3);
 }
 .commit-generate {
   display: inline-flex;
@@ -604,9 +620,9 @@ button:disabled {
   align-items: center;
   gap: 7px;
   width: 100%;
-  min-height: 34px;
+  min-height: 28px;
   justify-content: center;
-  margin-top: 8px;
+  margin-top: 6px;
   border-radius: 7px;
   font-size: 12px;
   font-weight: 500;
@@ -628,11 +644,9 @@ button:disabled {
 .git-clean {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  background: var(--bg);
+  gap: 6px;
+  padding: 3px 0;
+  color: var(--ink-3);
 }
 .git-clean > svg {
   flex: none;
@@ -1602,6 +1616,50 @@ button:disabled {
 }
 
 /* Tools */
+.tool-group {
+  margin: 5px 0;
+  min-width: 0;
+}
+.tool-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.tool-group-toggle:hover {
+  background: var(--bg-sunken);
+}
+.tool-group-toggle > svg {
+  flex: none;
+}
+.tool-group-count {
+  flex: none;
+}
+.tool-group-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+.tool-group-failed > .tool-group-toggle {
+  color: var(--danger);
+}
+.tool-group-body {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--rule);
+}
+.tool-group + .markdown,
+.markdown + .tool-group {
+  margin-top: 8px;
+}
 
 .tool {
   margin: 2px 0;

@@ -1,5 +1,5 @@
-import { AlertTriangle, ChevronRight, FileText, RotateCcw, Shuffle } from 'lucide-react'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Check, ChevronRight, FileText, Loader2, RotateCcw, Shuffle } from 'lucide-react'
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   PLAN_TOOL,
   sameModel,
@@ -191,7 +191,7 @@ function ToolRow({
   threadId: string
   interrupted: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState<boolean | null>(null)
   const summary = toolSummary(call.input)
   const status = result
     ? result.denied
@@ -205,9 +205,10 @@ function ToolRow({
         ? 'waiting'
         : 'running'
   const statusText = { ok: '', denied: 'não permitido', error: 'erro', waiting: 'aguardando você', running: 'executando' }[status]
+  const open = expanded ?? (status === 'error' || status === 'denied')
   return (
     <div className={`tool tool-${status}`}>
-      <button className="tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button className="tool-row" aria-expanded={open} onClick={() => setExpanded(!open)}>
         <ChevronRight size={13} className={`chevron${open ? ' rotated' : ''}`} />
         <span className="tool-name">{shortToolName(call.name)}</span>
         <span className="tool-summary">{summary}</span>
@@ -237,26 +238,67 @@ interface AssistantProps {
   running: boolean
 }
 
-function renderPart(part: Part, index: number, props: AssistantProps) {
+function ToolGroup({ calls, props }: { calls: ToolCallPart[]; props: AssistantProps }) {
+  const [expanded, setExpanded] = useState<boolean | null>(null)
+  const id = useId()
+  const waiting = calls.some((call) => props.approvals.some((entry) => entry.callId === call.id) || props.questions.some((entry) => entry.callId === call.id))
+  const failed = calls.some((call) => {
+    const result = props.results.get(call.id)
+    return result ? result.isError || result.denied : !props.running
+  })
+  const active = calls.find((call) => !props.results.has(call.id))
+  const executing = !!active && props.running && !waiting
+  // Approval controls can never be hidden. Manual expansion survives completion.
+  const open = waiting || (expanded ?? failed)
+  const count = `${calls.length} ${calls.length === 1 ? 'chamada de ferramenta' : 'chamadas de ferramenta'}`
+  const status = waiting ? 'Aguardando você' : executing ? 'Executando' : failed ? 'Com falha ou recusa' : 'Concluído'
+  return (
+    <div className={`tool-group${failed ? ' tool-group-failed' : ''}`}>
+      <button className="tool-group-toggle" aria-expanded={open} aria-controls={id} onClick={() => setExpanded(!open)}>
+        <ChevronRight size={13} className={`chevron${open ? ' rotated' : ''}`} aria-hidden />
+        {executing ? <Loader2 size={13} className="spin" aria-hidden /> : failed ? <AlertTriangle size={13} aria-hidden /> : !waiting ? <Check size={13} aria-hidden /> : null}
+        <span className="tool-group-count">{count}</span>
+        <span className="tool-group-status">{status}{executing && active ? ` · ${shortToolName(active.name)} · ${toolSummary(active.input)}` : ''}</span>
+      </button>
+      <div id={id} className="tool-group-body" hidden={!open}>
+        {calls.map((call, index) => (
+          <ToolRow key={`${call.id}-${index}`} call={call} result={props.results.get(call.id)} approval={props.approvals.find((entry) => entry.callId === call.id)} question={props.questions.find((entry) => entry.callId === call.id)} threadId={props.threadId} interrupted={!props.running} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Group only adjacent calls; prose, reasoning and model handoffs keep their original order. */
+function assistantParts(props: AssistantProps): ReactNode[] {
+  const nodes: ReactNode[] = []
+  let calls: ToolCallPart[] = []
+  let start = 0
+  const flush = (): void => {
+    if (calls.length) nodes.push(<ToolGroup key={`tools-${start}`} calls={calls} props={props} />)
+    calls = []
+  }
+  props.message.parts.forEach((part, index) => {
+    if (part.type === 'tool_call') {
+      if (part.name !== PLAN_TOOL) {
+        if (!calls.length) start = index
+        calls.push(part)
+      }
+    } else {
+      flush()
+      nodes.push(renderPart(part, index))
+    }
+  })
+  flush()
+  return nodes
+}
+
+function renderPart(part: Part, index: number) {
   switch (part.type) {
     case 'reasoning':
       return <Reasoning key={index} text={part.text} />
     case 'text':
       return <Markdown key={index} text={part.text} />
-    case 'tool_call':
-      // The task list is drawn above the message box, not as one more tool in the transcript.
-      if (part.name === PLAN_TOOL) return null
-      return (
-        <ToolRow
-          key={`${part.id}-${index}`}
-          call={part}
-          result={props.results.get(part.id)}
-          approval={props.approvals.find((entry) => entry.callId === part.id)}
-          question={props.questions.find((entry) => entry.callId === part.id)}
-          threadId={props.threadId}
-          interrupted={!props.running}
-        />
-      )
     default:
       return null
   }
@@ -280,7 +322,7 @@ const AssistantMessage = memo(function AssistantMessage(props: AssistantProps) {
           )}
         </header>
       )}
-      {message.parts.map((part, index) => renderPart(part, index, props))}
+      {assistantParts(props)}
       {message.stop === 'aborted' && <div className="turn-note">Interrompido por você.</div>}
       {message.excluded && <div className="turn-note">Esta resposta fica fora do contexto dos próximos modelos.</div>}
     </article>

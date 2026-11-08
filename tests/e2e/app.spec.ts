@@ -378,6 +378,11 @@ test('agent: asks before acting, edits files, runs commands, and can be interrup
   await expect(page.getByText('Executar este comando?')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Permitir', exact: true }).click()
   await idle(page)
+  const commandGroup = page.locator('.tool-group').last()
+  await expect(commandGroup.locator('.tool-group-toggle')).toHaveAttribute('aria-expanded', 'false')
+  await expect(commandGroup.locator('.tool-group-toggle')).toContainText('1 chamada de ferramenta')
+  await expect(commandGroup.locator('.tool-group-toggle')).toContainText('Concluído')
+  await commandGroup.locator('.tool-group-toggle').click()
   await page.locator('.tool-row', { hasText: 'run_command' }).last().click()
   await expect(page.locator('.tool-output').last()).toContainText('saida-do-comando')
   await shot(page, '06-ferramentas')
@@ -406,6 +411,95 @@ test('agent: asks before acting, edits files, runs commands, and can be interrup
   // The folder can't change once the conversation has begun.
   await expect(page.locator('.context-chip.action')).toBeDisabled()
 
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('tool groups: compact execution, manual expansion, errors and interruption', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await pickModel(page, 'chat-mock')
+  const command = 'node -e "setTimeout(() => console.log(123), 4000)"'
+  const request = `ferramenta: run_command ${JSON.stringify({ command })}`
+
+  await send(page, request)
+  const group = page.locator('.tool-group').last()
+  const toggle = group.locator('.tool-group-toggle')
+  await expect(toggle).toContainText('Aguardando você', { timeout: 15_000 })
+  await expect(page.getByLabel('Mensagem', { exact: true })).toBeFocused()
+  await toggle.click()
+  await expect(page.getByRole('button', { name: 'Permitir', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Permitir', exact: true }).click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(toggle).toContainText('Executando')
+  await expect(toggle).toContainText('run_command')
+  await expect(group.locator('.tool-row')).toBeHidden()
+  await idle(page)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(toggle).toContainText('Concluído')
+
+  await send(page, request)
+  await page.getByRole('button', { name: 'Permitir', exact: true }).click()
+  await expect(toggle).toContainText('Executando')
+  await toggle.click()
+  await group.locator('.tool-row').click()
+  await idle(page)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(group.locator('.tool-output')).toHaveText(/123/)
+  // Collapsing the group doesn't discard manually opened details.
+  await toggle.click()
+  await toggle.click()
+  await expect(group.locator('.tool-output')).toBeVisible()
+
+  await send(page, 'ferramenta: read_file {"path":"missing-file.txt"}')
+  await idle(page)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(toggle).toContainText('Com falha ou recusa')
+  await expect(group.locator('.tool-output.failed')).toBeVisible()
+
+  await send(page, request)
+  await page.getByRole('button', { name: 'Permitir', exact: true }).click()
+  await expect(toggle).toContainText('Executando')
+  await page.getByRole('button', { name: 'Interromper', exact: true }).click()
+  await idle(page)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(group.locator('.tool-output')).toBeVisible()
+  await shot(page, 'ferramentas-compactas')
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('tool groups: adjacent calls stay together, prose and repeated ids keep their order', async () => {
+  await seedProviders()
+  const id = '22222222-2222-4222-8222-222222222222'
+  const model = { provider: 'custom-c', id: 'chat-mock' }
+  const call = (id: string, path: string) => ({ type: 'tool_call', id, name: 'read_file', input: { path } })
+  const result = (callId: string, content: string) => ({ type: 'tool_result', callId, content })
+  await mkdir(path.join(dataDir, 'threads'), { recursive: true })
+  await writeFile(path.join(dataDir, 'threads', `${id}.json`), JSON.stringify({
+    id, title: 'Ferramentas agrupadas', createdAt: 1, updatedAt: 1, workspace, model, system: 'test', contextFiles: [], allowedTools: [],
+    messages: [
+      { id: 'u1', role: 'user', createdAt: 1, parts: [{ type: 'text', text: 'Ler arquivos' }] },
+      { id: 'a1', role: 'assistant', createdAt: 2, model, parts: [call('same', 'a.txt'), call('other', 'b.txt'), { type: 'text', text: 'Entre as chamadas.' }, call('third', 'c.txt')] },
+      { id: 't1', role: 'tool', createdAt: 3, parts: [result('same', 'primeiro resultado'), result('other', 'segundo resultado'), result('third', 'terceiro resultado')] },
+      { id: 'a2', role: 'assistant', createdAt: 4, model, parts: [call('same', 'd.txt')] },
+      { id: 't2', role: 'tool', createdAt: 5, parts: [result('same', 'resultado seguinte')] }
+    ]
+  }))
+  const { app, page, problems } = await launch()
+  const groups = page.locator('.tool-group')
+  await expect(groups).toHaveCount(3)
+  await expect(groups.nth(0).locator('.tool-group-toggle')).toContainText('2 chamadas de ferramenta')
+  await expect(groups.nth(1).locator('.tool-group-toggle')).toContainText('1 chamada de ferramenta')
+  await expect(page.locator('.tool-group-toggle[aria-expanded="true"]')).toHaveCount(0)
+  await expect(page.locator('.markdown', { hasText: 'Entre as chamadas.' })).toBeVisible()
+  await groups.nth(0).locator('.tool-group-toggle').click()
+  await groups.nth(0).locator('.tool-row').first().click()
+  await expect(groups.nth(0).locator('.tool-output')).toHaveText('primeiro resultado')
+  await groups.nth(2).locator('.tool-group-toggle').click()
+  await groups.nth(2).locator('.tool-row').click()
+  await expect(groups.nth(2).locator('.tool-output')).toHaveText('resultado seguinte')
   expect(problems).toEqual([])
   await app.close()
 })
@@ -446,6 +540,7 @@ test('MCP: a real server becomes available to any model, with approval', async (
   await expect(page.getByText('Usar esta ferramenta externa?')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Permitir', exact: true }).click()
   await idle(page)
+  await page.locator('.tool-group-toggle').click()
   await page.locator('.tool-row', { hasText: 'teste · somar' }).click()
   await expect(page.locator('.tool-output')).toHaveText('5')
 
@@ -522,11 +617,43 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(panel.locator('.commit-button')).toHaveAccessibleName('Push')
   await expect(panel.locator('.commit-button')).toBeEnabled()
   await expect(panel.locator('.commit-hash').first()).toHaveText(repo('rev-parse', '--short=7', 'HEAD'))
+  // Secondary actions live in an accessible menu, not an extra toolbar row.
+  const gitMenuButton = panel.getByRole('button', { name: 'Mais ações do Git' })
+  await expect(panel.locator('.git-sync')).toHaveCount(0)
+  await gitMenuButton.focus()
+  await gitMenuButton.press('ArrowDown')
+  const gitMenu = panel.getByRole('menu', { name: 'Ações do Git' })
+  await expect(gitMenu).toBeVisible()
+  await expect(gitMenu.getByRole('menuitem', { name: 'Pull', exact: true })).toBeDisabled()
+  await expect(gitMenu.getByRole('menuitem', { name: 'Push', exact: true })).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(gitMenu.getByRole('menuitem', { name: 'Nova branch' })).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(gitMenu.getByRole('menuitem', { name: 'Push', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(gitMenu.getByRole('menuitem', { name: 'Fetch', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(gitMenu).toHaveCount(0)
+  await expect(gitMenuButton).toBeFocused()
+  await gitMenuButton.click()
+  await panel.getByLabel('Texto do commit').click({ position: { x: 8, y: 8 } })
+  await expect(gitMenu).toHaveCount(0)
+  await gitMenuButton.click()
+  await gitMenu.getByRole('menuitem', { name: 'Fetch', exact: true }).click()
+  await expect(gitMenu).toHaveCount(0)
+  await expect(gitMenuButton).toBeEnabled()
+
   // The refined surfaces stay readable and contained in either system theme.
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme })
     await expect(panel.locator('.git-clean')).toBeVisible()
     await expect(panel.locator('.commit-box')).toBeVisible()
+    // Keep the empty commit form compact without hiding its controls.
+    const commitBox = await panel.locator('.commit-box').boundingBox()
+    expect(commitBox!.height).toBeLessThanOrEqual(34)
+    const commitButton = await panel.locator('.commit-button').boundingBox()
+    expect(commitButton!.height).toBeLessThanOrEqual(30)
+    await expect(panel.getByRole('button', { name: 'Gerar mensagem do commit com IA' })).toBeVisible()
     expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     await shot(page, `painel-premium-${colorScheme}`)
   }
@@ -567,7 +694,7 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   await expect(panel.getByRole('heading', { name: 'Preparadas (1)' })).toBeVisible()
   await expect(panel.getByRole('heading', { name: 'Preparadas (1)' }).locator('.section-count')).toHaveText('1')
   await expect(panel.getByText('Tudo preparado', { exact: true })).toBeVisible()
-  await expect(panel.getByText('1 arquivo no commit', { exact: true })).toBeVisible()
+  await expect(panel.getByRole('heading', { name: 'Preparadas (1)' })).toBeVisible()
 
   // A model reads what is staged and writes the message.
   await pickModel(page, 'chat-mock')
@@ -585,7 +712,7 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
 
   await panel.getByRole('button', { name: 'Fazer commit' }).click()
   await expect(panel.locator('.commit-subject').first()).toHaveText('feat(painel): adiciona a segunda linha')
-  await expect(panel.getByRole('heading', { name: 'Preparadas (0)' })).toBeVisible()
+  await expect(panel.getByRole('heading', { name: 'Preparadas (0)' })).toHaveCount(0)
   await expect(panel.getByLabel('Texto do commit')).toHaveValue('')
   expect(repo('log', '-1', '--format=%s')).toBe('feat(painel): adiciona a segunda linha')
   expect(repo('log', '-1', '--format=%b')).toContain('Mostra o que mudou no README.')
@@ -623,7 +750,8 @@ test('project panel: changes, diff, commit, branches, pull requests and files', 
   expect(repo('rev-parse', '@{upstream}')).toBe(repo('rev-parse', 'HEAD'))
 
   // New branch, then publish it.
-  await panel.getByRole('button', { name: 'Nova branch' }).click()
+  await panel.getByRole('button', { name: 'Mais ações do Git' }).click()
+  await panel.getByRole('menuitem', { name: 'Nova branch' }).click()
   await panel.getByLabel('Nome da nova branch').fill('nome inválido')
   await panel.getByLabel('Nome da nova branch').press('Enter')
   await expect(panel.getByRole('alert')).toContainText('inválido')
@@ -772,7 +900,9 @@ test('a project without Git works normally, and can start using it', async () =>
   // The agent works here just the same.
   await pickModel(page, 'chat-mock')
   await send(page, 'ferramenta: read_file {"path":"notas.txt"}')
-  await expect(page.locator('.tool-row', { hasText: 'read_file' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.tool-group-toggle')).toBeVisible({ timeout: 15_000 })
+  await page.locator('.tool-group-toggle').click()
+  await expect(page.locator('.tool-row', { hasText: 'read_file' })).toBeVisible()
   await idle(page)
   expect(JSON.stringify(llm.last('openai-chat')!.body.messages)).toContain('sem controle de versão')
 
