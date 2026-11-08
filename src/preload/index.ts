@@ -30,6 +30,10 @@ const api: UniApi = {
   },
   chat: { send: call('chat.send'), stop: call('chat.stop'), respond: call('chat.respond'), answer: call('chat.answer') },
   mcp: { list: call('mcp.list'), add: call('mcp.add'), remove: call('mcp.remove'), reconnect: call('mcp.reconnect') },
+  terminal: {
+    list: call('terminal.list'), create: call('terminal.create'), read: call('terminal.read'),
+    write: call('terminal.write'), resize: call('terminal.resize'), close: call('terminal.close')
+  },
   attachments: { preview: call('attachments.preview') },
   project: {
     repos: call('project.repos'),

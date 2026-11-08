@@ -83,6 +83,30 @@ async function openProject(app: ElectronApplication, page: Page): Promise<void> 
 
 const idle = (page: Page) => expect(page.getByRole('button', { name: 'Enviar', exact: true })).toBeVisible({ timeout: 20_000 })
 
+test('collapsed project headings stay compact', async () => {
+  const { app, page } = await launch()
+  await openProject(app, page)
+  const secondWorkspace = path.join(dataDir, 'second-project')
+  await mkdir(secondWorkspace)
+  await answerFolderDialog(app, secondWorkspace)
+  await page.getByRole('button', { name: 'Abrir outro projeto' }).click()
+  const groups = page.locator('.sidebar-project')
+  await expect(groups).toHaveCount(2)
+  for (const toggle of await groups.locator('.thread-group-toggle').all()) {
+    if (await toggle.getAttribute('aria-expanded') === 'true') await toggle.click()
+  }
+  const gap = () => groups.evaluateAll((nodes) => {
+    const first = nodes[0].querySelector('.thread-group')!.getBoundingClientRect()
+    const second = nodes[1].querySelector('.thread-group')!.getBoundingClientRect()
+    return second.top - first.bottom
+  })
+  await expect.poll(gap).toBe(2)
+  await groups.first().locator('.thread-group-toggle').click()
+  await expect(groups.first().locator('.thread-group-toggle')).toHaveAttribute('aria-expanded', 'true')
+  await expect(groups.nth(1)).toHaveCSS('margin-top', '16px')
+  await app.close()
+})
+
 test.beforeAll(async () => {
   llm = await startMockLlm()
 })
@@ -1450,5 +1474,98 @@ test('update settings show installed version without network access in developme
   await page.getByRole('button', { name: 'Reiniciar e atualizar', exact: true }).click()
   // Synthetic UI events cannot bypass the main process download requirement.
   await expect(page.getByRole('alert')).toContainText('Baixe a atualização antes de instalar.')
+  await app.close()
+})
+
+test('interactive terminals: multiple shells, live output, hide, resize, and exit', async () => {
+  const { app, page, problems } = await launch()
+  await expect(page.getByRole('button', { name: 'Abrir painel de terminais' })).toHaveCount(0)
+  const denied = await page.evaluate(async () => {
+    const thread = (await window.uni.threads.list())[0]
+    try { await window.uni.terminal.create(thread.id); return '' } catch (error) { return String(error) }
+  })
+  expect(denied).toContain('projeto')
+  await openProject(app, page)
+  await page.getByRole('button', { name: 'Abrir painel de terminais' }).click()
+  const panel = page.getByRole('complementary', { name: 'Terminais do projeto' })
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole('tab')).toHaveCount(1)
+  const input = panel.locator('.terminal-view:not([hidden]) textarea')
+  await expect(input).toBeFocused()
+  const first = await page.evaluate(async () => (await window.uni.terminal.list())[0])
+  // Commands go through the actual terminal input, not a simulated subprocess.
+  await input.fill('echo CLAUDIO_TERMINAL_OK')
+  await input.press('Enter')
+  await expect.poll(() => page.evaluate(async (id) => (await window.uni.terminal.read(id)).data, first.id)).toContain('CLAUDIO_TERMINAL_OK')
+  const output = await page.evaluate(async (id) => (await window.uni.terminal.read(id)).data, first.id)
+  expect(output.toLowerCase()).toContain(workspace.toLowerCase())
+  await page.getByRole('button', { name: 'Novo terminal', exact: true }).click()
+  await expect(panel.getByRole('tab')).toHaveCount(2)
+  await expect(panel.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Ocultar terminais', exact: true }).click()
+  await expect(panel).toBeHidden()
+  expect(await page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(2)
+  await page.getByRole('button', { name: 'Abrir painel de terminais' }).click()
+  await expect(panel.getByRole('tab')).toHaveCount(2)
+  await panel.getByRole('tab').first().click()
+  await expect(input).toBeFocused()
+  await page.setViewportSize({ width: 760, height: 600 })
+  await expect(panel).toBeVisible()
+  const bounds = await panel.boundingBox()
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(761)
+  await input.fill('exit')
+  await input.press('Enter')
+  await expect(panel.getByRole('tab').first()).toContainText('encerrado (0)', { timeout: 15_000 })
+  await panel.getByRole('button', { name: `Encerrar ${first.title}`, exact: true }).click()
+  await expect(panel.getByRole('tab')).toHaveCount(1)
+  const remaining = await page.evaluate(async () => (await window.uni.terminal.list())[0])
+  await panel.getByRole('button', { name: `Encerrar ${remaining.title}`, exact: true }).click()
+  await expect(panel.getByRole('tab')).toHaveCount(0)
+  expect(await page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(0)
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('interactive terminals: sessions follow conversations and close when their project changes', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await page.getByRole('button', { name: 'Abrir painel de terminais' }).click()
+  const panel = page.getByRole('complementary', { name: 'Terminais do projeto' })
+  await expect(panel.getByRole('tab')).toHaveCount(1)
+  const first = await page.evaluate(async () => (await window.uni.terminal.list())[0])
+  // An empty conversation can change project; its old shell must not stay attached to the new folder.
+  const another = path.join(dataDir, 'terminal-project')
+  await mkdir(another)
+  await answerFolderDialog(app, another)
+  await page.getByRole('button', { name: 'Abrir outro projeto' }).click()
+  await expect.poll(() => page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(0)
+  await page.getByRole('button', { name: 'Escolher a pasta do projeto' }).click()
+  await page.getByRole('button', { name: 'Abrir terminal', exact: true }).click()
+  await expect(panel.getByRole('tab')).toHaveCount(1)
+  const second = await page.evaluate(async () => (await window.uni.terminal.list())[0])
+  expect(second.workspace).toBe(another)
+  expect(second.id).not.toBe(first.id)
+  await pickModel(page, 'Claude Simulado')
+  await send(page, 'Olá')
+  await idle(page)
+  const oldThread = second.threadId
+  await page.getByRole('button', { name: 'Nova conversa (Ctrl+N)' }).click()
+  await expect.poll(() => page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(2)
+  const currentThread = await page.evaluate(async () => {
+    const sessions = await window.uni.terminal.list()
+    return sessions[sessions.length - 1].threadId
+  })
+  expect(currentThread).not.toBe(oldThread)
+  // Returning to the first conversation restores its own tab instead of creating another shell.
+  const summaries = await page.evaluate(() => window.uni.threads.list())
+  const old = summaries.find((entry) => entry.id === oldThread)!
+  await page.getByRole('button', { name: old.title, exact: true }).click()
+  await expect(panel.getByRole('tab')).toHaveCount(1)
+  expect(await page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(2)
+  // Removing a conversation also terminates its shells.
+  await page.evaluate((id) => window.uni.threads.remove(id), currentThread)
+  await expect.poll(() => page.evaluate(async () => (await window.uni.terminal.list()).length)).toBe(1)
+  expect(problems).toEqual([])
   await app.close()
 })

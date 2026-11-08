@@ -13,6 +13,7 @@ import { resolveInside, workspaceTools } from './tools/builtin'
 import { McpManager, parseMcpJson } from './tools/mcp'
 import electronUpdater from 'electron-updater'
 import { UpdateService } from './updates'
+import { TerminalService } from './terminals'
 
 const DARK = { background: '#1e1e1e', symbols: '#ececec' }
 const LIGHT = { background: '#f7f7f7', symbols: '#1a1a1a' }
@@ -100,6 +101,28 @@ async function start(): Promise<void> {
   const models = new ModelDirectory(settings, facts)
   const mcp = new McpManager((servers) => emit({ type: 'mcp', servers }))
   for (const server of await settings.mcpServers()) mcp.connect(server)
+
+  const terminals = new TerminalService(emit)
+  handle('terminal.list', () => terminals.list())
+  handle('terminal.create', async (threadId: string) => {
+    const thread = await threads.get(threadId)
+    if (!thread?.workspace) throw new Error('Escolha um projeto antes de abrir um terminal.')
+    const terminal = await terminals.create(threadId, thread.workspace)
+    const current = await threads.get(threadId)
+    if (current?.workspace !== terminal.workspace) {
+      terminals.close(terminal.id)
+      throw new Error('O projeto mudou enquanto o terminal abria. Tente novamente.')
+    }
+    return terminal
+  })
+  handle('terminal.read', (id: string) => terminals.read(id))
+  handle('terminal.write', (id: string, data: string) => terminals.write(id, data))
+  handle('terminal.resize', (id: string, cols: number, rows: number) => terminals.resize(id, cols, rows))
+  handle('terminal.close', (id: string) => terminals.close(id))
+  app.on('before-quit', () => terminals.dispose())
+  app.on('window-all-closed', () => {
+    for (const terminal of terminals.list()) terminals.close(terminal.id)
+  })
 
   const pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>()
   const pendingQuestions = new Map<string, (answers: QuestionAnswer[] | null) => void>()
@@ -193,6 +216,7 @@ async function start(): Promise<void> {
   })
   handle('threads.remove', async (id: string) => {
     runner.stop(id)
+    terminals.closeThread(id)
     await threads.remove(id)
     return threads.list()
   })
@@ -208,7 +232,9 @@ async function start(): Promise<void> {
     if (!thread) throw new Error('Conversa não encontrada.')
     // The folder is part of the frozen context the models were told about.
     if (thread.system !== null) throw new Error('O projeto só pode mudar antes da primeira mensagem.')
-    thread.workspace = workspace ? await resolveProjectRoot(workspace) : null
+    const nextWorkspace = workspace ? await resolveProjectRoot(workspace) : null
+    if (nextWorkspace !== thread.workspace) terminals.closeThread(id)
+    thread.workspace = nextWorkspace
     await threads.save(thread)
     return thread
   })

@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Trash2, Wrench } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Terminal as TerminalIcon, Trash2, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { chooseAutoModel, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, NEW_THREAD_TITLE, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
@@ -14,6 +14,7 @@ import { Settings } from './Settings'
 import { api, useAppStore } from './store'
 import { Transcript } from './Transcript'
 import { Updates } from './Updates'
+import { TerminalPanel } from './TerminalPanel'
 
 /** Below this width the panel stays closed until asked for, leaving the conversation room to breathe. */
 const PANEL_MIN_WIDTH = 1100
@@ -91,6 +92,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = prefs.theme
   }, [prefs.theme])
+  const [terminalOpen, setTerminalOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toolCount, setToolCount] = useState(0)
@@ -265,10 +267,11 @@ export function App() {
   // Only conversations from before projects were required can be in this state.
   const withoutProject = thread.workspace === null && !needsProject
   const empty = thread.messages.length === 0 && !running
-  const showPanel = panelOpen && thread.workspace !== null
+  const showTerminals = terminalOpen && thread.workspace !== null
+  const showPanel = panelOpen && thread.workspace !== null && !showTerminals
 
   return (
-    <div className={`app${showPanel ? ' with-panel' : ''}`}>
+    <div className={`app${showPanel ? ' with-panel' : ''}${showTerminals ? ' with-terminal' : ''}`}>
       <aside className="sidebar" aria-label="Navegação principal">
         <div className="brand">
           <Mark />
@@ -380,8 +383,9 @@ export function App() {
               >
                 <Folder size={12} aria-hidden /> {thread.workspace ? folderName(thread.workspace) : 'Sem projeto'}
               </button>
+              {thread.workspace && <button className={`panel-toggle${showTerminals ? ' on' : ''}`} aria-label={showTerminals ? 'Ocultar painel de terminais' : 'Abrir painel de terminais'} aria-pressed={showTerminals} title="Terminal" onClick={() => setTerminalOpen(!terminalOpen)}><TerminalIcon size={15} /></button>}
               {thread.workspace && (
-                <button className={`panel-toggle${showPanel ? ' on' : ''}`} aria-label={showPanel ? 'Fechar painel do projeto' : 'Abrir painel do projeto'} aria-pressed={showPanel} title="Painel do projeto" onClick={() => setPanelOpen(!panelOpen)}>
+                <button className={`panel-toggle${showPanel ? ' on' : ''}`} aria-label={showPanel ? 'Fechar painel do projeto' : 'Abrir painel do projeto'} aria-pressed={showPanel} title="Painel do projeto" onClick={() => { setTerminalOpen(false); setPanelOpen(!showPanel) }}>
                   <PanelRight size={14} />
                 </button>
               )}
@@ -469,6 +473,8 @@ export function App() {
       </main>
 
       {showPanel && <ProjectPanel threadId={thread.id} workspace={thread.workspace!} running={running} commitModel={commitModel} onClose={() => setPanelOpen(false)} />}
+
+      <TerminalPanel threadId={thread.id} open={showTerminals} onClose={() => setTerminalOpen(false)} />
 
       {pickerOpen && (
         <ModelPicker

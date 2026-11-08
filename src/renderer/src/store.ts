@@ -146,6 +146,9 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
     case 'mcp':
       return { ...state, mcp: event.servers }
     case 'update':
+    case 'terminal-data':
+    case 'terminal-changed':
+    case 'terminal-closed':
     case 'models-changed':
       return state
     case 'delta':

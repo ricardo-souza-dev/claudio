@@ -214,7 +214,23 @@ export interface UpdateStatus {
   message?: string
 }
 
+export interface TerminalSession {
+  id: string
+  threadId: string
+  workspace: string
+  title: string
+  exitCode?: number
+}
+
+export interface TerminalSnapshot {
+  data: string
+  sequence: number
+}
+
 export type UniEvent =
+  | { type: 'terminal-data'; id: string; sequence: number; data: string }
+  | { type: 'terminal-changed'; terminal: TerminalSession }
+  | { type: 'terminal-closed'; id: string }
   | { type: 'update'; status: UpdateStatus }
   | { type: 'thread'; thread: Thread }
   | { type: 'threads'; threads: ThreadSummary[] }
@@ -416,6 +432,14 @@ export interface UniApi {
     add(json: string): Promise<McpStatus[]>
     remove(name: string): Promise<McpStatus[]>
     reconnect(name: string): Promise<McpStatus[]>
+  }
+  terminal: {
+    list(): Promise<TerminalSession[]>
+    create(threadId: string): Promise<TerminalSession>
+    read(id: string): Promise<TerminalSnapshot>
+    write(id: string, data: string): Promise<void>
+    resize(id: string, cols: number, rows: number): Promise<void>
+    close(id: string): Promise<void>
   }
   attachments: {
     /** A data URL for showing a stored image. */

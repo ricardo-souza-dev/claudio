@@ -9,6 +9,8 @@ files:
   - resources/icon.ico
   - package.json
 asar: true
+asarUnpack:
+  - node_modules/node-pty/**/*
 npmRebuild: false
 win:
   icon: resources/icon.ico

@@ -1024,7 +1024,13 @@ button:disabled {
   color: var(--ink-3);
 }
 .sidebar-project + .sidebar-project {
-  margin-top: 16px;
+  margin-top: 10px;
+}
+.sidebar-project:has(.thread-group-toggle[aria-expanded="false"]) + .sidebar-project {
+  margin-top: 2px;
+}
+.sidebar-project:has(.thread-group-toggle[aria-expanded="false"]) .thread-group {
+  margin-bottom: 0;
 }
 .open-project {
   display: flex;
@@ -1078,6 +1084,9 @@ button:disabled {
 .thread-group-name {
   flex: 1;
   min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2952,3 +2961,53 @@ button.chip:hover {
 .update-banner { flex: none; padding: 8px 18px; border-bottom: 1px solid var(--rule); background: var(--bg-raised); color: var(--ink); font-size: 12px; }
 .update-banner .button { margin-left: 8px; }
 .update-settings p { max-width: 560px; line-height: 1.6; }
+
+/* Interactive terminals stay mounted while hidden so running shells and scrollback survive. */
+.app.with-terminal {
+  grid-template-columns: 280px minmax(0, 1fr) minmax(340px, 38vw);
+}
+.app.with-terminal .topbar { padding-right: 18px; }
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--rule);
+  background: #181818;
+  color: #ececec;
+}
+.terminal-panel[hidden], .terminal-view[hidden] { display: none; }
+.terminal-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: var(--topbar);
+  padding: 0 calc(var(--overlay-width) + 8px) 0 12px;
+  border-bottom: 1px solid #353535;
+  -webkit-app-region: drag;
+}
+.terminal-head strong { font-size: 12px; font-weight: 500; }
+[data-platform='darwin'] .terminal-head { padding-right: 12px; }
+.terminal-toolbar { display: flex; flex: none; align-items: center; gap: 4px; padding: 6px; border-bottom: 1px solid #353535; }
+.terminal-tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; gap: 4px; }
+.terminal-tab { display: flex; align-items: center; flex: none; border: 1px solid #353535; border-radius: 4px; }
+.terminal-tab [role='tab'] { padding: 4px 7px; white-space: nowrap; font-size: 12px; color: #b4b4b4; }
+.terminal-tab [aria-selected='true'] { background: #303030; color: #ffffff; }
+.terminal-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 4px; }
+.terminal-icon:hover { background: #353535; }
+.terminal-icon:disabled { opacity: .4; }
+.terminal-hint { flex: none; margin: 6px 10px; color: #a4a4a4; font-size: 10px; }
+.terminal-error { flex: none; padding: 8px 12px; font-size: 12px; color: #ffaaa3; }
+.terminal-empty { padding: 20px; font-size: 12px; }
+.terminal-view { flex: 1; min-height: 0; min-width: 0; padding: 6px 8px; overflow: hidden; }
+.terminal-view .xterm { height: 100%; }
+@media (max-width: 1100px) {
+  .app.with-terminal { grid-template-columns: 280px minmax(0, 1fr); }
+  .terminal-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 15; width: min(520px, calc(100vw - 220px)); box-shadow: var(--shadow); }
+  .app.with-terminal .topbar { padding-right: calc(var(--overlay-width) + 8px); }
+}
+@media (max-width: 980px) {
+  .app.with-terminal { grid-template-columns: 200px minmax(0, 1fr); }
+}
