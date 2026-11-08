@@ -88,8 +88,13 @@ test('collapsed project headings stay compact', async () => {
   await openProject(app, page)
   const secondWorkspace = path.join(dataDir, 'second-project')
   await mkdir(secondWorkspace)
-  await answerFolderDialog(app, secondWorkspace)
-  await page.getByRole('button', { name: 'Abrir outro projeto' }).click()
+  // Seed two named conversations: an untouched new one is intentionally absent from the sidebar.
+  await page.evaluate(async (folder) => {
+    const first = (await window.uni.threads.list())[0]
+    await window.uni.threads.rename(first.id, 'Primeiro projeto')
+    const second = await window.uni.threads.create(folder, null)
+    await window.uni.threads.rename(second.id, 'Segundo projeto')
+  }, secondWorkspace)
   const groups = page.locator('.sidebar-project')
   await expect(groups).toHaveCount(2)
   for (const toggle of await groups.locator('.thread-group-toggle').all()) {
