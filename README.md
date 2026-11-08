@@ -25,7 +25,9 @@ O instalador para Windows x64 é gerado com `npm run dist:win`, em `dist/`. A di
 
 O app instalado verifica novas versões e permite baixar e reiniciar para atualizar, sem instalar automaticamente ao fechar. A instalação é bloqueada durante execuções do agente. Conversas e configurações ficam fora da pasta do programa.
 
-Veja [o guia de distribuição](docs/distribuicao.md) para publicar o site, criar releases, configurar assinatura e validar atualizações. O instalador local atual não tem assinatura de código; a atualização entre duas versões instaladas ainda precisa de validação.
+Para criar uma release Windows pelo GitHub Actions, use `.\build-project-win.ps1 -Version 1.0.1` na raiz. O script confere a versão, envia commit/tag, acompanha os testes e baixa os arquivos para revisão. Depois de testar, use `-Resume -Publish` para publicar, com confirmação final. `-WhatIf` mostra o plano sem alterar nada.
+
+Veja [o guia de distribuição](docs/distribuicao.md) para os pré-requisitos do script, publicar o site, configurar assinatura e validar atualizações. O instalador local atual não tem assinatura de código; a atualização entre duas versões instaladas ainda precisa de validação.
 
 ## Como rodar em desenvolvimento
 

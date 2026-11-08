@@ -76,6 +76,71 @@ Arquivos em `dist/`:
 
 O empacotador baixa Electron e ferramentas NSIS se ainda não estiverem no cache. O primeiro build precisa de internet. `dist:win` **não publica** arquivos.
 
+## Publicar pelo script Windows
+
+O arquivo `build-project-win.ps1`, na raiz, automatiza a release usando o workflow **Instalador Windows**. A compilação acontece no GitHub Actions, não no computador local. O script não muda a versão nem publica nada só por existir no projeto.
+
+### Preparação
+
+- Windows PowerShell 5.1 ou PowerShell 7, Node.js 22+, Git e [GitHub CLI](https://cli.github.com/) no `PATH`.
+- Autenticação no GitHub: execute `gh auth login` uma vez. O Git também precisa estar autorizado a enviar ao `origin` (HTTPS ou SSH).
+- Permissão para enviar commits/tags e criar/publicar releases no repositório configurado em `electron-builder.yml`, com Actions habilitado.
+- Branch `main`, sem alterações pendentes nem arquivos novos fora do Git. Faça commit de **todo o código que deve entrar na versão**, inclusive do script, antes de executar. Commits locais ainda não enviados podem ser enviados pelo script, desde que a `main` remota seja ancestral da local.
+
+### Comandos
+
+Na raiz do projeto, primeiro confira o plano sem alterar arquivos ou acessar o GitHub:
+
+```powershell
+.\build-project-win.ps1 -Version 1.0.1 -Publish -WhatIf
+```
+
+Recomendado: gere primeiro um rascunho para testar:
+
+```powershell
+.\build-project-win.ps1 -Version 1.0.1
+```
+
+O script pede confirmação para iniciar e então:
+
+1. Confere versões, branch, árvore limpa, origem, autenticação e tags/releases existentes.
+2. Atualiza `package.json` e `package-lock.json`, faz commit **só desses dois arquivos** e cria `v1.0.1`.
+3. Envia `main` e a tag em um único push atômico, sem forçar nada.
+4. Acompanha o workflow correspondente à tag e ao commit, até os testes e o build terminarem.
+5. Confere o rascunho e baixa `.exe`, `.exe.blockmap` e `latest.yml`.
+6. Confere versão, caminho, tamanho e SHA-512 do instalador descrito no feed e guarda os arquivos em `dist/releases/v1.0.1/`.
+
+Teste o instalador e uma atualização real. Depois, retome para publicar:
+
+```powershell
+.\build-project-win.ps1 -Version 1.0.1 -Resume -Publish
+```
+
+Para fazer tudo em uma execução, use `-Publish` desde o início. **Há uma segunda confirmação imediatamente antes da publicação para todos.** Sem `-Publish`, ou recusando essa confirmação, a release continua em rascunho.
+
+```powershell
+.\build-project-win.ps1 -Version 1.0.1 -Publish
+```
+
+Por padrão, as notas são geradas pelo GitHub a partir dos commits/PRs. Para usar notas revisadas em um arquivo UTF-8:
+
+```powershell
+.\build-project-win.ps1 -Version 1.0.1 -Resume -Publish -NotesFile C:\Temp\claudio-1.0.1.md
+```
+
+O script publica como release normal e mais recente. Só então o site e os aplicativos instalados passam a oferecê-la. A instalação continua dependendo do consentimento de cada usuário. A assinatura usa os segredos do workflow; o script não adiciona nem exige um certificado novo.
+
+### Falhas e retomada
+
+- `-Resume` exige a versão solicitada nos dois arquivos e `HEAD` no commit da tag local, na branch `main`. Não aumenta a versão nem recria a tag; se a tag já está no remoto, não faz outro push.
+- O prazo padrão para acompanhar Actions é de 60 minutos. Use `-TimeoutMinutes 120` para esperar mais. Fechar o terminal ou atingir esse prazo não cancela o workflow remoto.
+- Em falha de infraestrutura, reexecute o workflow no GitHub e use `-Resume`. Se o código de uma tag enviada estiver errado, corrija em outro commit e lance **uma versão maior**; não mova nem force a tag antiga.
+- Se uma falha acontecer antes de criar o commit e a tag, confira `git status` e os arquivos de versão antes de tentar de novo. O script não faz reset, stash ou rollback automático.
+- A versão precisa ser maior que a local e que as tags/releases estáveis existentes. Releases já publicadas nunca são editadas pelo script, e seus arquivos não são substituídos.
+- `-WhatIf` lê a configuração e as versões locais com Node, mas não executa Git, npm ou GitHub CLI. Para execução sem perguntas existe o parâmetro padrão `-Confirm:$false`; use-o apenas numa automação confiável, pois com `-Publish` ele também dispensa a confirmação pública final.
+
+Os testes automatizados do script usam comandos simulados no Windows PowerShell real. Eles **não enviam código nem publicam releases**; uma publicação real continua dependendo das suas credenciais, permissões e da execução do Actions.
+
 ## Publicar uma versão
 
 Antes da primeira distribuição pública:
