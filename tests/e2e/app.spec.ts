@@ -108,7 +108,7 @@ test('collapsed project headings stay compact', async () => {
   await expect.poll(gap).toBe(2)
   await groups.first().locator('.thread-group-toggle').click()
   await expect(groups.first().locator('.thread-group-toggle')).toHaveAttribute('aria-expanded', 'true')
-  await expect(groups.nth(1)).toHaveCSS('margin-top', '16px')
+  await expect(groups.nth(1)).toHaveCSS('margin-top', '10px')
   await app.close()
 })
 
