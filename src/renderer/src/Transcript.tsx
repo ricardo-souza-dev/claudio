@@ -16,7 +16,7 @@ import {
   type ToolCallPart,
   type ToolResultPart
 } from '../../shared/types'
-import { formatFileSize, modelLabel, providerLabel, shortToolName, toolSummary, usageLabel } from './format'
+import { formatFileSize, modelLabel, providerLabel, shortToolName, toolActivity, toolSummary, usageLabel } from './format'
 import { Markdown } from './Markdown'
 import { api, type LiveTurn } from './store'
 
@@ -204,6 +204,10 @@ function ToolRow({
       : approval || question
         ? 'waiting'
         : 'running'
+  const failed = status === 'error' || status === 'denied'
+  useEffect(() => {
+    if (failed) setExpanded((current) => current === true ? true : null)
+  }, [failed])
   const statusText = { ok: '', denied: 'não permitido', error: 'erro', waiting: 'aguardando você', running: 'executando' }[status]
   const open = expanded ?? (status === 'error' || status === 'denied')
   return (
@@ -246,19 +250,25 @@ function ToolGroup({ calls, props }: { calls: ToolCallPart[]; props: AssistantPr
     const result = props.results.get(call.id)
     return result ? result.isError || result.denied : !props.running
   })
+  useEffect(() => {
+    if (failed) setExpanded((current) => current === true ? true : null)
+  }, [failed])
   const active = calls.find((call) => !props.results.has(call.id))
   const executing = !!active && props.running && !waiting
   // Approval controls can never be hidden. Manual expansion survives completion.
   const open = waiting || (expanded ?? failed)
   const count = `${calls.length} ${calls.length === 1 ? 'chamada de ferramenta' : 'chamadas de ferramenta'}`
   const status = waiting ? 'Aguardando você' : executing ? 'Executando' : failed ? 'Com falha ou recusa' : 'Concluído'
+  const activities = [...new Set(calls.map((call) => toolActivity(call.name, call.input)))]
+  const summary = executing && active ? toolActivity(active.name, active.input) : activities.slice(0, 2).join(' · ') + (activities.length > 2 ? ` · +${activities.length - 2}` : '')
   return (
     <div className={`tool-group${failed ? ' tool-group-failed' : ''}`}>
       <button className="tool-group-toggle" aria-expanded={open} aria-controls={id} onClick={() => setExpanded(!open)}>
         <ChevronRight size={13} className={`chevron${open ? ' rotated' : ''}`} aria-hidden />
         {executing ? <Loader2 size={13} className="spin" aria-hidden /> : failed ? <AlertTriangle size={13} aria-hidden /> : !waiting ? <Check size={13} aria-hidden /> : null}
+        <span className="tool-group-summary" title={summary}>{summary}</span>
         <span className="tool-group-count">{count}</span>
-        <span className="tool-group-status">{status}{executing && active ? ` · ${shortToolName(active.name)} · ${toolSummary(active.input)}` : ''}</span>
+        <span className="tool-group-status">{status}</span>
       </button>
       <div id={id} className="tool-group-body" hidden={!open}>
         {calls.map((call, index) => (

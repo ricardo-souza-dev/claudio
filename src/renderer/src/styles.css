@@ -1638,14 +1638,24 @@ button:disabled {
 .tool-group-toggle > svg {
   flex: none;
 }
+.tool-group-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
 .tool-group-count {
   flex: none;
+  font-size: 10.5px;
+  color: var(--ink-3);
 }
 .tool-group-status {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
   color: var(--ink-3);
 }
 .tool-group-failed > .tool-group-toggle {

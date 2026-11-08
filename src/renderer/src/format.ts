@@ -85,6 +85,35 @@ export function toolSummary(input: unknown): string {
   return first === undefined ? '' : String(first)
 }
 
+/** Local, bounded labels: never send tool arguments to another model just to name an action. */
+export function toolActivity(name: string, input: unknown): string {
+  const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
+  const value = (key: string): string => typeof record[key] === 'string' ? (record[key] as string).replace(/\s+/g, ' ').trim() : ''
+  const brief = (text: string): string => text.length > 90 ? `${text.slice(0, 89)}…` : text
+  const path = value('path')
+  switch (name) {
+    case 'read_file': return `Leitura de ${folderName(path) || 'arquivo'}`
+    case 'edit_file': return `Edição de ${folderName(path) || 'arquivo'}`
+    case 'write_file': return `Gravação de ${folderName(path) || 'arquivo'}`
+    case 'list_dir': return `Arquivos de ${path ? folderName(path) : 'projeto'}`
+    case 'search': return `Busca${value('pattern') ? ` por “${brief(value('pattern'))}”` : ' no projeto'}`
+    case 'ask_user': return 'Perguntas para você'
+    case 'run_command': {
+      const command = value('command')
+      const tasks: string[] = []
+      if (/\b(?:npm|pnpm|yarn|bun)(?:\.cmd)?\s+(?:run\s+)?typecheck\b/i.test(command)) tasks.push('tipos')
+      if (/\b(?:npm|pnpm|yarn|bun)(?:\.cmd)?\s+(?:run\s+)?build\b/i.test(command)) tasks.push('build')
+      if (/\b(?:npm|pnpm|yarn|bun)(?:\.cmd)?\s+(?:run\s+)?test(?::[\w-]+)?\b|\b(?:npx\s+)?(?:vitest|playwright)\s+(?:run|test)\b/i.test(command)) tasks.push('testes')
+      if (tasks.length) return `Validação: ${tasks.join(', ')}`
+      return `Comando${command ? `: ${brief(command)}` : ''}`
+    }
+    default: {
+      const detail = toolSummary(input).replace(/\s+/g, ' ').trim()
+      return brief(`${shortToolName(name)}${detail ? ` · ${detail}` : ''}`)
+    }
+  }
+}
+
 export function shortToolName(name: string): string {
   const match = /^mcp__(.+?)__(.+)$/.exec(name)
   return match ? `${match[1]} · ${match[2]}` : name
