@@ -59,6 +59,14 @@ O botão de IA na caixa de commit lê o que está preparado, ou tudo quando nada
 
 Para listar e criar PRs, instale o [GitHub CLI](https://cli.github.com). Em uma pasta sem Git, o painel mostra só os arquivos e oferece iniciar um repositório.
 
+## Terminal integrado
+
+O botão **Terminal** no topo abre um painel lateral com PowerShell no Windows, já na pasta do projeto. Use **+** para abrir outras abas (até 16 sessões no app). A entrada é interativa e a saída aparece ao vivo, inclusive para servidores e comandos que continuam rodando.
+
+Cada conversa mantém suas próprias sessões. Ocultar o painel ou trocar de conversa não encerra os processos; fechar uma aba encerra aquela sessão e seus processos. As sessões não são restauradas depois de fechar o app. Alterar o projeto de uma conversa ainda vazia ou apagá-la também encerra seus terminais.
+
+O terminal é operado por você, separado das ferramentas do agente, e executa comandos com suas permissões, sem sandbox. Chaves de API do ambiente do app não são repassadas ao shell.
+
 ## Navegador
 
 Em **Ajustes → Ferramentas MCP**, os atalhos de Chrome conectam um servidor de navegador que qualquer modelo com ferramentas pode usar. Cada ação pede confirmação, porque uma página pode tentar dar ordens ao modelo.
