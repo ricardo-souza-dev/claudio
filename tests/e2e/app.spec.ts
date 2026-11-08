@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -1504,7 +1504,8 @@ test('interactive terminals: multiple shells, live output, hide, resize, and exi
   await expect.poll(() => page.evaluate(async (id) => (await window.uni.terminal.read(id)).data, first.id)).toContain('CLAUDIO_TERMINAL_OK')
   await expect(panel.locator('.terminal-view:not([hidden]) .xterm-rows')).toContainText('CLAUDIO_TERMINAL_OK')
   const output = await page.evaluate(async (id) => (await window.uni.terminal.read(id)).data, first.id)
-  expect(output.toLowerCase()).toContain(workspace.toLowerCase())
+  // The shell uses the resolved cwd; Windows TEMP can contain an 8.3 alias such as RUNNER~1.
+  expect(output.toLowerCase()).toContain((await realpath(workspace)).toLowerCase())
   await page.getByRole('button', { name: 'Novo terminal', exact: true }).click()
   await expect(panel.getByRole('tab')).toHaveCount(2)
   await expect(panel.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true')
