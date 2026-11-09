@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createResponsesAdapter } from '../src/main/providers/openai-responses'
 import type { ProviderConnection } from '../src/main/providers/types'
 
-const allowed = ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-5.6']
+const allowed = ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-5.6']
 
 describe('OpenAI model selection', () => {
   let server: Server
@@ -12,7 +12,7 @@ describe('OpenAI model selection', () => {
   let ids: string[]
 
   beforeEach(async () => {
-    ids = [...allowed, 'gpt-other', 'gpt-6-luna-2026-01-01', 'gpt-5.6-preview', 'text-embedding-mock']
+    ids = [...allowed, 'gpt-6-sol', 'gpt-other', 'gpt-6-luna-2026-01-01', 'gpt-5.6-preview', 'text-embedding-mock']
     server = createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ data: ids.map((id) => ({ id, object: 'model' })) }))
@@ -33,7 +33,7 @@ describe('OpenAI model selection', () => {
     return createResponsesAdapter(connection)
   }
 
-  it('lists only the five exact allowed IDs returned by the API', async () => {
+  it('lists only the four exact allowed IDs returned by the API', async () => {
     expect((await adapter().listModels()).map((model) => model.id).sort()).toEqual([...allowed].sort())
   })
 

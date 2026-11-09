@@ -10,7 +10,7 @@ export function isTextModel(id: string): boolean {
 }
 
 // Product curation only: availability and metadata still come from the API/catalog.
-const OPENAI_SELECTION = new Set(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-5.6'])
+const OPENAI_SELECTION = new Set(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-5.6'])
 
 export function isSelectableOpenAiModel(id: string): boolean {
   return OPENAI_SELECTION.has(id)

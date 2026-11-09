@@ -93,7 +93,7 @@ Em **Ajustes → Ferramentas MCP**, os atalhos de Chrome conectam um servidor de
 
 Prontos para usar: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Together AI, OpenRouter, Ollama e LM Studio. O OpenRouter, sozinho, dá acesso a centenas de modelos de outros fornecedores.
 
-Na integração OpenAI, o seletor fica restrito a `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6-sol` e `gpt-5.6`, somente quando retornados pela API da sua conta. O Luna aparece uma vez; a força é escolhida no controle separado. Preços e limites continuam vindo da API e do catálogo, sem valores fixos para esses modelos.
+Na integração OpenAI, o seletor fica restrito a `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` e `gpt-5.6`, somente quando retornados pela API da sua conta. O Luna aparece uma vez; a força é escolhida no controle separado. Preços e limites continuam vindo da API e do catálogo, sem valores fixos para esses modelos.
 
 Na integração Anthropic, o seletor oferece apenas Sonnet 5.5, Haiku 5.5, Opus 5.5, Fable 5.1, Haiku 4.5 e Sonnet 4.6, quando retornados pela API. São aceitos os IDs-base (`claude-sonnet-5-5`, por exemplo) e os IDs dessas versões com sufixo de data. Força, capacidades e limites continuam seguindo os dados da API e do catálogo.
 

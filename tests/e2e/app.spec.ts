@@ -87,7 +87,7 @@ const idle = (page: Page) => expect(page.getByRole('button', { name: 'Enviar', e
 
 test('provider pickers curate OpenAI and Anthropic without restricting custom providers', async () => {
   await seedProviders()
-  const allowed = ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-5.6']
+  const allowed = ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-5.6']
   const anthropic = ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-haiku-4-5-20261001', 'claude-sonnet-4-6']
   const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
@@ -97,7 +97,7 @@ test('provider pickers curate OpenAI and Anthropic without restricting custom pr
         has_more: false
       }))
     } else {
-      res.end(JSON.stringify({ data: [...allowed, 'gpt-other', 'gpt-6-luna-preview'].map((id) => ({ id })) }))
+      res.end(JSON.stringify({ data: [...allowed, 'gpt-6-sol', 'gpt-other', 'gpt-6-luna-preview'].map((id) => ({ id })) }))
     }
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -123,10 +123,11 @@ test('provider pickers curate OpenAI and Anthropic without restricting custom pr
     await dialog.getByRole('button', { name: 'Atualizar lista de modelos' }).click()
     await expect(dialog.getByText('gpt-6.1-terra', { exact: true })).toBeVisible()
     await dialog.getByRole('textbox').fill('OpenAI')
-    await expect(page.locator('.picker-row')).toHaveCount(6)
+    await expect(page.locator('.picker-row')).toHaveCount(5)
     for (const id of [...allowed, 'gpt-mock']) {
       await expect(page.locator('.picker-row').filter({ hasText: id })).toHaveCount(1)
     }
+    await expect(dialog.getByText('gpt-6-sol', { exact: true })).toHaveCount(0)
     await expect(page.locator('.picker-row').filter({ hasText: 'gpt-other' })).toHaveCount(0)
     await expect(page.locator('.picker-row').filter({ hasText: 'preview' })).toHaveCount(0)
     await dialog.getByRole('textbox').fill('Anthropic')
