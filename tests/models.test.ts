@@ -172,6 +172,16 @@ describe('modelo automático', () => {
     expect(unfitReason(mixed[1], task('oi', { hasImages: true, contextTokens: 50_000 }))).toBeNull()
   })
 
+  it('says how much context is left before the limit, and that it is gone', () => {
+    const small = model('pequeno', price(1), { contextWindow: 100_000 })
+    // 50k of the 100k window used: within 80% of the limit, so the model still fits.
+    expect(unfitReason(small, task('oi', { contextTokens: 50_000 }))).toBeNull()
+    // 85k used: over the margin but under the limit, so the fit shows the slack.
+    expect(unfitReason(small, task('oi', { contextTokens: 85_000 }))).toBe('contexto não cabe (sobram 14 999 tokens)')
+    // Past the limit entirely.
+    expect(unfitReason(small, task('oi', { contextTokens: 120_000 }))).toBe('contexto já não cabe')
+  })
+
   it('declines to choose when no model has a known price', () => {
     expect(chooseAutoModel([model('a'), model('b')], task('oi'), null)).toBeNull()
   })

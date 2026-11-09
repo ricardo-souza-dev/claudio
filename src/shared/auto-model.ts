@@ -59,8 +59,26 @@ export function inputTokensOf(task: TaskInfo): number {
 /** Why this model can't take this task, if it can't. */
 export function unfitReason(model: ModelInfo, task: TaskInfo): string | null {
   if (task.hasImages && model.imageInput === false) return 'não lê imagens'
-  if (model.contextWindow && inputTokensOf(task) > model.contextWindow * CONTEXT_MARGIN) return 'contexto não cabe'
+  const needed = inputTokensOf(task)
+  if (model.contextWindow && needed > model.contextWindow * CONTEXT_MARGIN) {
+    return needed > model.contextWindow
+      ? 'contexto já não cabe'
+      : `contexto não cabe (sobram ${model.contextWindow - needed} tokens)`
+  }
   return null
+}
+
+/** How close the current conversation is to the model's limit, when the limit is known. */
+export interface ContextFit {
+  remaining: number
+  /** 0 to 1, how much of the limit the conversation already uses. */
+  fraction: number
+}
+
+export function contextFit(model: ModelInfo, task: TaskInfo): ContextFit | null {
+  if (!model.contextWindow) return null
+  const used = inputTokensOf(task)
+  return { remaining: model.contextWindow - used, fraction: used / model.contextWindow }
 }
 
 export interface TurnEstimate {
