@@ -1472,13 +1472,33 @@ test('choosing a model: recommendation for the moment, with cost, strength and m
   await page.keyboard.press('Control+k')
   await expect(row.locator('.picker-figure').nth(2)).toHaveText(/^~\d+s$/, { timeout: 10_000 })
 
-  // A model that no longer fits the conversation is blocked, with the shortfall.
-  await page.getByLabel('Mensagem', { exact: true }).fill('x'.repeat(800))
-  await expect(dialog.locator('.picker-row', { hasText: 'Claude Simulado' })).toContainText('contexto não cabe')
-  const claudeRow = dialog.locator('.picker-row', { hasText: 'Claude Simulado' }).first()
-  await expect(claudeRow).toHaveClass(/disabled/)
-  await page.getByLabel('Mensagem', { exact: true }).fill('oi')
-  await expect(claudeRow).not.toHaveClass(/disabled/)
+  // Claude has a 200k window. Drafts are estimated at four characters per token.
+  // Exclude the recommendation row so this locator always identifies one button.
+  const claudeRow = dialog.locator('.picker-row:not(.picker-recommended)', { hasText: 'Claude Simulado' })
+  const draft = page.getByLabel('Mensagem', { exact: true })
+  await draft.fill('x'.repeat(155_000 * 4))
+  await expect(claudeRow.locator('.picker-warn')).toContainText('perto do limite')
+  await expect(claudeRow).toBeEnabled()
+
+  // Exceed even the full window, not just the reserved margin for output.
+  await draft.fill('x'.repeat(210_000 * 4))
+  await expect(claudeRow).toContainText('faltam')
+  await expect(claudeRow).toBeDisabled()
+  await expect(claudeRow).toHaveClass(/unfit/)
+
+  // Enter must not bypass a disabled button through the keyboard handler.
+  const search = dialog.getByRole('textbox')
+  await search.fill('Claude Simulado')
+  await search.press('Enter')
+  await expect(dialog).toBeVisible()
+  await expect(claudeRow).toBeDisabled()
+
+  // A shorter draft makes the same model selectable again.
+  await draft.fill('oi')
+  await expect(claudeRow).toBeEnabled()
+  await expect(claudeRow.locator('.picker-warn')).toHaveCount(0)
+  await search.fill('')
+  await search.focus()
   await page.keyboard.press('Escape')
 
   // Open the picker before the asynchronous file read finishes.
