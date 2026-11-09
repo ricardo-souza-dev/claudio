@@ -8,7 +8,7 @@ function release() {
   return { tag_name: 'v0.1.0', draft: false, prerelease: false, assets: [{ name: 'Claudio-Setup-0.1.0-x64.exe', browser_download_url: url, size: 104857600 }] }
 }
 function doc() {
-  const elements = { 'release-status': { textContent: '' }, download: { hidden: true, href: '' } }
+  const elements = { 'release-status': { textContent: '' }, download: { hidden: true, href: '' }, 'hero-download': { href: '#downloads' } }
   return { elements, getElementById: (id: keyof typeof elements) => elements[id] }
 }
 describe('website presentation', () => {
@@ -55,12 +55,14 @@ describe('website downloads', () => {
     await loadRelease(document, vi.fn(async () => ({ ok: true, json: async () => release() })))
     expect(document.elements.download.hidden).toBe(false)
     expect(document.elements.download.href).toBe(url)
+    expect(document.elements['hero-download'].href).toBe(url)
     expect(document.elements['release-status'].textContent).toContain('100 MB')
   })
   it('does not invent a download before the first release', async () => {
     const document = doc()
     await loadRelease(document, vi.fn(async () => ({ status: 404 })))
     expect(document.elements.download.hidden).toBe(true)
+    expect(document.elements['hero-download'].href).toBe('#downloads')
     expect(document.elements['release-status'].textContent).toContain('ainda não foi publicado')
   })
   it('keeps the GitHub fallback on API failures or missing installers', async () => {

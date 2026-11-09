@@ -52,6 +52,8 @@ test('website: release download, mobile layout and unavailable release', async (
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Troque o modelo.Não a conversa.')
     await expect(page.locator('#download')).toBeVisible()
     await expect(page.locator('#download')).toHaveAttribute('href', /github.com\/ricardo-souza-dev\/claudio\/releases\/download\//)
+    await expect(page.locator('#hero-download')).toHaveAttribute('href', /github.com\/ricardo-souza-dev\/claudio\/releases\/download\//)
+    await expect(page.locator('#hero-download')).toContainText('Baixar para Windows')
     const screenshot = page.getByRole('img', { name: /Interface do Claudio em tema escuro/ })
     await expect(screenshot).toBeVisible()
     await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth === 1400 && image.naturalHeight === 820)).toBe(true)
@@ -102,6 +104,7 @@ test('website: release download, mobile layout and unavailable release', async (
     await page.reload()
     await expect(page.locator('#release-status')).toContainText('ainda não foi publicado')
     await expect(page.locator('#download')).toBeHidden()
+    await expect(page.locator('#hero-download')).toHaveAttribute('href', '#downloads')
     expect(errors).toEqual([])
   } finally {
     await app.close()

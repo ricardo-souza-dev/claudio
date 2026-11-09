@@ -14,6 +14,7 @@ export function windowsRelease(release) {
 export async function loadRelease(doc = document, request = fetch) {
   const status = doc.getElementById('release-status')
   const download = doc.getElementById('download')
+  const heroDownload = doc.getElementById('hero-download')
   try {
     const response = await request('https://api.github.com/repos/ricardo-souza-dev/claudio/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(8000) })
     if (response.status === 404) {
@@ -29,6 +30,7 @@ export async function loadRelease(doc = document, request = fetch) {
     status.textContent = `${release.version} · ${release.size} MB · versão de testes`
     download.href = release.url
     download.hidden = false
+    if (heroDownload) heroDownload.href = release.url
   } catch {
     status.textContent = 'Não foi possível consultar o download agora. Confira os lançamentos no GitHub.'
   }
