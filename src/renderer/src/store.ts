@@ -247,8 +247,13 @@ export function useAppStore() {
     }
   }, [flush, refreshModels])
 
-  const setPrefs = useCallback(async (patch: Partial<Preferences>) => {
-    dispatch({ type: 'patch', patch: { prefs: await api.prefs.set(patch) } })
+  const prefsQueue = useRef<Promise<void>>(Promise.resolve())
+  const setPrefs = useCallback((patch: Partial<Preferences>) => {
+    const next = prefsQueue.current.catch(() => undefined).then(async () => {
+      dispatch({ type: 'patch', patch: { prefs: await api.prefs.set(patch) } })
+    })
+    prefsQueue.current = next
+    return next
   }, [])
 
   const setProviders = useCallback((providers: ProviderView[]) => {

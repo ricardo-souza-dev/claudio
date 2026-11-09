@@ -386,6 +386,7 @@ function GitTab({
   commitModel,
   withSync,
   onStatus,
+  onActionStart,
   onView
 }: {
   threadId: string
@@ -394,6 +395,7 @@ function GitTab({
   commitModel: CommitModel | null
   withSync: boolean
   onStatus(status: GitStatus): void
+  onActionStart(): void
   onView(viewing: Viewing): void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
@@ -417,6 +419,7 @@ function GitTab({
 
   const act = useCallback(
     async (action: GitAction, onDone?: () => void) => {
+      onActionStart()
       setBusy(action.type)
       setProblem(null)
       try {
@@ -428,7 +431,7 @@ function GitTab({
         setBusy(null)
       }
     },
-    [threadId, repo, onStatus]
+    [threadId, repo, onStatus, onActionStart]
   )
 
   const staged = status.files.filter((file) => !file.untracked && !file.conflicted && file.index !== '.')
@@ -780,25 +783,38 @@ function RepoBlock({
   onView(viewing: Viewing): void
 }) {
   const [open, setOpen] = useState(repo.kind === 'root')
-  const report = useCallback((next: GitStatus) => onStatus(repo.path, next), [onStatus, repo.path])
+  const revision = useRef(0)
+  const invalidate = useCallback(() => { revision.current++ }, [])
+  const report = useCallback((next: GitStatus) => {
+    revision.current++
+    onStatus(repo.path, next)
+  }, [onStatus, repo.path])
+  const loadStatus = useCallback(() => {
+    const current = ++revision.current
+    void api.project.git(threadId, repo.path).then((next) => {
+      if (revision.current === current) onStatus(repo.path, next)
+    }).catch(() => undefined)
+  }, [threadId, repo.path, onStatus])
 
   useEffect(() => {
-    void api.project.git(threadId, repo.path).then(report).catch(() => undefined)
-  }, [threadId, repo.path, refreshKey, report])
+    loadStatus()
+    return invalidate
+  }, [refreshKey, loadStatus, invalidate])
 
   const expanded = alone || open
   useEffect(() => {
     if (!expanded) return
     const timer = setInterval(() => {
-      if (document.hasFocus()) void api.project.git(threadId, repo.path).then(report).catch(() => undefined)
+      if (document.hasFocus()) loadStatus()
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [expanded, threadId, repo.path, report])
+  }, [expanded, loadStatus])
 
   // Syncing works from the header too, with the repository closed.
   const [syncing, setSyncing] = useState(false)
   const [syncProblem, setSyncProblem] = useState<string | null>(null)
   const sync = async (): Promise<void> => {
+    invalidate()
     setSyncing(true)
     setSyncProblem(null)
     try {
@@ -810,7 +826,7 @@ function RepoBlock({
     }
   }
 
-  const body = status ? <GitTab threadId={threadId} repo={repo.path} status={status} commitModel={commitModel} withSync={alone} onStatus={report} onView={onView} /> : null
+  const body = status ? <GitTab threadId={threadId} repo={repo.path} status={status} commitModel={commitModel} withSync={alone} onStatus={report} onActionStart={invalidate} onView={onView} /> : null
   if (alone) return body
 
   const changes = status?.files.length ?? 0
