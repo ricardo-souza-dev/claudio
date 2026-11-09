@@ -103,7 +103,7 @@ export function ModelPicker({ listing, loading, title, current, inConversation, 
   }, [cursor])
 
   const choose = (model: ModelInfo | undefined): void => {
-    if (!model) return
+    if (!model || unfitReason(model, task)) return
     onSelect({ provider: model.provider, id: model.id })
     onClose()
   }
@@ -196,10 +196,12 @@ export function ModelPicker({ listing, loading, title, current, inConversation, 
                 row += 1
                 const position = row
                 const key = modelKey(model)
+                const unfit = unfitReason(model, task)
                 return (
                   <button
                     key={key}
-                    className={`picker-row${position === cursor ? ' cursor' : ''}${key === currentKey ? ' selected' : ''}`}
+                    className={`picker-row${position === cursor ? ' cursor' : ''}${key === currentKey ? ' selected' : ''}${unfit ? ' unfit' : ''}`}
+                    disabled={!!unfit}
                     onMouseMove={() => setCursor(position)}
                     onClick={() => choose(model)}
                   >

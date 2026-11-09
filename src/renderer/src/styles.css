@@ -2762,6 +2762,10 @@ button.chip:hover {
   font: 400 11px var(--mono);
   color: var(--warn);
 }
+.picker-row.unfit {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .picker-recommended {
   flex: none;
   padding-block: 7px;

@@ -1471,6 +1471,14 @@ test('choosing a model: recommendation for the moment, with cost, strength and m
   await idle(page)
   await page.keyboard.press('Control+k')
   await expect(row.locator('.picker-figure').nth(2)).toHaveText(/^~\d+s$/, { timeout: 10_000 })
+
+  // A model that no longer fits the conversation is blocked, with the shortfall.
+  await page.getByLabel('Mensagem', { exact: true }).fill('x'.repeat(800))
+  await expect(dialog.locator('.picker-row', { hasText: 'Claude Simulado' })).toContainText('contexto não cabe')
+  const claudeRow = dialog.locator('.picker-row', { hasText: 'Claude Simulado' }).first()
+  await expect(claudeRow).toHaveClass(/disabled/)
+  await page.getByLabel('Mensagem', { exact: true }).fill('oi')
+  await expect(claudeRow).not.toHaveClass(/disabled/)
   await page.keyboard.press('Escape')
 
   // Open the picker before the asynchronous file read finishes.
