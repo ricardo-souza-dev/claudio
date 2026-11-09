@@ -1555,6 +1555,12 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await page.keyboard.press('Tab')
   const renameFirst = sidebar.getByRole('button', { name: 'Renomear “Conversa número um”' })
   await expect(renameFirst).toBeFocused()
+  const iconAlignment = await sidebar.locator('.thread-item.active').evaluate((row) => {
+    const rename = row.querySelector('.thread-rename svg')!.getBoundingClientRect()
+    const remove = row.querySelector('.thread-delete svg')!.getBoundingClientRect()
+    return Math.abs((rename.top + rename.height / 2) - (remove.top + remove.height / 2))
+  })
+  expect(iconAlignment).toBeLessThanOrEqual(0.5)
   await renameFirst.click()
   const titleInput = sidebar.getByRole('textbox', { name: 'Título da conversa' })
   await titleInput.fill('Título personalizado')
