@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowDownUp, ArrowUp, Check, CheckCircle2, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, MoreHorizontal, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
+import { ArrowDown, ArrowDownUp, ArrowUp, Check, CheckCircle2, ChevronRight, CloudUpload, ExternalLink, FileText, Folder, FolderGit2, GitBranch as BranchIcon, GitPullRequest, Loader2, Minus, MoreHorizontal, Play, Plus, RefreshCw, RotateCcw, Sparkles, X } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { GitAction, GitFile, GitStatus, ModelRef, PrListing, ProjectFile, ProjectRepos, RepoRef } from '../../shared/types'
 import { folderName, remoteErrorMessage, timeAgo } from './format'
@@ -616,7 +616,27 @@ function buildTree(paths: string[]): TreeNode[] {
   return sort(root.children!)
 }
 
-function TreeRows({ nodes, depth, codes, open, onToggle, onFile }: { nodes: TreeNode[]; depth: number; codes: Map<string, string>; open: Set<string>; onToggle(path: string): void; onFile(path: string): void }) {
+interface ScriptActions {
+  launching: boolean
+  onRunScript(path: string): void
+}
+
+function FileTreeRow({ path, depth, code, filtered, launching, onFile, onRunScript }: ScriptActions & { path: string; depth: number; code?: string; filtered?: boolean; onFile(path: string): void }) {
+  return (
+    <div className="tree-file-row">
+      <button className="tree-row" style={{ paddingLeft: filtered ? 6 : 18 + depth * 12 }} onClick={() => onFile(path)}>
+        <FileText size={12} aria-hidden />
+        {filtered ? <FileLabel path={path} /> : <span className={`tree-name${code ? ' changed' : ''}`}>{path.split('/').at(-1)}</span>}
+        {code && <StatusBadge code={code} />}
+      </button>
+      {/\.ps1$/i.test(path) && <button className="tree-run" aria-label={`Executar ${path} no terminal`} title="Executar em um novo terminal PowerShell (sem sandbox)" disabled={launching} onClick={() => onRunScript(path)}>
+        <Play size={12} aria-hidden />
+      </button>}
+    </div>
+  )
+}
+
+function TreeRows({ nodes, depth, codes, open, onToggle, onFile, launching, onRunScript }: ScriptActions & { nodes: TreeNode[]; depth: number; codes: Map<string, string>; open: Set<string>; onToggle(path: string): void; onFile(path: string): void }) {
   return (
     <>
       {nodes.map((node) => {
@@ -631,24 +651,32 @@ function TreeRows({ nodes, depth, codes, open, onToggle, onFile }: { nodes: Tree
                 <Folder size={12} aria-hidden />
                 <span className={`tree-name${changedInside ? ' changed' : ''}`}>{node.name}</span>
               </button>
-              {expanded && <TreeRows nodes={node.children} depth={depth + 1} codes={codes} open={open} onToggle={onToggle} onFile={onFile} />}
+              {expanded && <TreeRows nodes={node.children} depth={depth + 1} codes={codes} open={open} onToggle={onToggle} onFile={onFile} launching={launching} onRunScript={onRunScript} />}
             </div>
           )
         }
         return (
-          <button key={node.path} className="tree-row" style={{ paddingLeft: 18 + depth * 12 }} onClick={() => onFile(node.path)}>
-            <FileText size={12} aria-hidden />
-            <span className={`tree-name${code ? ' changed' : ''}`}>{node.name}</span>
-            {code && <StatusBadge code={code} />}
-          </button>
+          <FileTreeRow key={node.path} path={node.path} depth={depth} code={code} onFile={onFile} launching={launching} onRunScript={onRunScript} />
         )
       })}
     </>
   )
 }
 
-function FilesTab({ threadId, statuses, refreshKey, onView }: { threadId: string; statuses: Record<string, GitStatus>; refreshKey: number; onView(viewing: Viewing): void }) {
+function FilesTab({ threadId, statuses, refreshKey, onView, onRunScript }: { threadId: string; statuses: Record<string, GitStatus>; refreshKey: number; onView(viewing: Viewing): void; onRunScript(path: string): Promise<void> }) {
   const [paths, setPaths] = useState<string[] | null>(null)
+  const [launching, setLaunching] = useState(false)
+  const launchingRef = useRef(false)
+  const [launchError, setLaunchError] = useState<string | null>(null)
+  const runScript = async (path: string): Promise<void> => {
+    if (launchingRef.current) return
+    launchingRef.current = true
+    setLaunching(true)
+    setLaunchError(null)
+    try { await onRunScript(path) }
+    catch (error) { setLaunchError(remoteErrorMessage(error)) }
+    finally { launchingRef.current = false; setLaunching(false) }
+  }
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState<Set<string>>(new Set())
 
@@ -675,17 +703,14 @@ function FilesTab({ threadId, statuses, refreshKey, onView }: { threadId: string
   return (
     <>
       <input className="panel-input" aria-label="Filtrar arquivos" placeholder="Filtrar arquivos" spellCheck={false} value={filter} onChange={(event) => setFilter(event.target.value)} />
+      {launchError && <p className="result failed" role="alert">{launchError}</p>}
       <div className="tree">
         {matches ? (
           matches.length === 0 ? (
             <p className="panel-empty">Nenhum arquivo com “{filter}”.</p>
           ) : (
             matches.map((path) => (
-              <button key={path} className="tree-row" onClick={() => openFile(path)}>
-                <FileText size={12} aria-hidden />
-                <FileLabel path={path} />
-                {codes.get(path) && <StatusBadge code={codes.get(path)!} />}
-              </button>
+              <FileTreeRow key={path} path={path} depth={0} code={codes.get(path)} filtered onFile={openFile} launching={launching} onRunScript={(path) => void runScript(path)} />
             ))
           )
         ) : (
@@ -695,6 +720,8 @@ function FilesTab({ threadId, statuses, refreshKey, onView }: { threadId: string
             codes={codes}
             open={open}
             onFile={openFile}
+            launching={launching}
+            onRunScript={(path) => void runScript(path)}
             onToggle={(path) =>
               setOpen((current) => {
                 const next = new Set(current)
@@ -794,7 +821,7 @@ function RepoBlock({
   )
 }
 
-export function ProjectPanel({ threadId, workspace, running, commitModel, onClose }: { threadId: string; workspace: string; running: boolean; commitModel: CommitModel | null; onClose(): void }) {
+export function ProjectPanel({ threadId, workspace, running, commitModel, onClose, onRunScript }: { threadId: string; workspace: string; running: boolean; commitModel: CommitModel | null; onClose(): void; onRunScript(path: string): Promise<void> }) {
   const [found, setFound] = useState<ProjectRepos | null>(null)
   const [statuses, setStatuses] = useState<Record<string, GitStatus>>({})
   const [tab, setTab] = useState<'git' | 'files'>('git')
@@ -896,7 +923,7 @@ export function ProjectPanel({ threadId, workspace, running, commitModel, onClos
           repos.map((repo) => (
             <RepoBlock key={repo.path} threadId={threadId} repo={repo} alone={repos.length === 1} refreshKey={refreshKey} status={statuses[repo.path]} commitModel={commitModel} onStatus={reportStatus} onView={setViewing} />
           ))}
-        {activeTab === 'files' && <FilesTab threadId={threadId} statuses={statuses} refreshKey={refreshKey} onView={setViewing} />}
+        {activeTab === 'files' && <FilesTab threadId={threadId} statuses={statuses} refreshKey={refreshKey} onView={setViewing} onRunScript={onRunScript} />}
       </div>
       {viewing && <Viewer threadId={threadId} viewing={viewing} onClose={() => setViewing(null)} />}
     </aside>

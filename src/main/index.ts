@@ -104,10 +104,10 @@ async function start(): Promise<void> {
 
   const terminals = new TerminalService(emit)
   handle('terminal.list', () => terminals.list())
-  handle('terminal.create', async (threadId: string) => {
+  handle('terminal.create', async (threadId: string, scriptPath?: string) => {
     const thread = await threads.get(threadId)
     if (!thread?.workspace) throw new Error('Escolha um projeto antes de abrir um terminal.')
-    const terminal = await terminals.create(threadId, thread.workspace)
+    const terminal = await terminals.create(threadId, thread.workspace, scriptPath)
     const current = await threads.get(threadId)
     if (current?.workspace !== terminal.workspace) {
       terminals.close(terminal.id)

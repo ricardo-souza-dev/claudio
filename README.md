@@ -77,7 +77,9 @@ Para listar e criar PRs, instale o [GitHub CLI](https://cli.github.com). Em uma 
 
 ## Terminal integrado
 
-O botão **Terminal** no topo abre um painel lateral com PowerShell no Windows, já na pasta do projeto. Use **+** para abrir outras abas (até 16 sessões no app). A entrada é interativa e a saída aparece ao vivo, inclusive para servidores e comandos que continuam rodando.
+O botão **Terminal** no topo abre um painel lateral com PowerShell no Windows, já na pasta do projeto. Ele pode ficar aberto junto com a coluna de **Arquivos/Git**: a conversa, o terminal e o projeto aparecem lado a lado, com controles independentes para ocultar cada painel. Em janelas estreitas, os dois painéis flutuam lado a lado, sem cobrir um ao outro. Use **+** para abrir outras abas (até 16 sessões no app). A entrada é interativa e a saída aparece ao vivo, inclusive para servidores e comandos que continuam rodando.
+
+Na aba **Arquivos**, os arquivos `.ps1` têm um botão **▶** à direita, inclusive nos resultados do filtro. Ele executa o script em uma nova aba PowerShell, na pasta do projeto, com saída ao vivo e entrada interativa. O terminal permanece aberto ao terminar. O botão não ignora a política de execução do PowerShell; se ela bloquear o script, o erro aparece no terminal. Nomes com espaços e aspas são passados como argumentos, sem virar um comando de shell.
 
 Cada conversa mantém suas próprias sessões. Ocultar o painel ou trocar de conversa não encerra os processos; fechar uma aba encerra aquela sessão e seus processos. As sessões não são restauradas depois de fechar o app. Alterar o projeto de uma conversa ainda vazia ou apagá-la também encerra seus terminais.
 

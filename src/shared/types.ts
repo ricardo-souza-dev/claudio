@@ -438,7 +438,8 @@ export interface UniApi {
   }
   terminal: {
     list(): Promise<TerminalSession[]>
-    create(threadId: string): Promise<TerminalSession>
+    /** A script opens a dedicated PowerShell session, without shell interpolation. */
+    create(threadId: string, scriptPath?: string): Promise<TerminalSession>
     read(id: string): Promise<TerminalSnapshot>
     write(id: string, data: string): Promise<void>
     resize(id: string, cols: number, rows: number): Promise<void>

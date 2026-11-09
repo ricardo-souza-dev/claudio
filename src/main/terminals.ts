@@ -3,6 +3,7 @@ import { realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import type { TerminalSession, TerminalSnapshot, UniEvent } from '../shared/types'
+import { resolveInside } from './tools/builtin'
 
 const MAX_SESSIONS = 16
 const BUFFER_LIMIT = 200_000
@@ -33,25 +34,34 @@ export class TerminalService {
     return [...this.sessions.values()].map((session) => ({ ...session.info }))
   }
 
-  async create(threadId: string, workspace: string): Promise<TerminalSession> {
+  async create(threadId: string, workspace: string, scriptPath?: string): Promise<TerminalSession> {
     if (this.disposed) throw new Error('Os terminais estão sendo encerrados.')
     if (this.sessions.size + this.opening >= MAX_SESSIONS) throw new Error('Limite de 16 terminais abertos. Feche uma aba para abrir outra.')
     this.opening++
     try {
       const cwd = await realpath(workspace)
       if (!(await stat(cwd)).isDirectory()) throw new Error('A pasta do projeto não existe.')
+      let script: string | undefined
+      if (scriptPath !== undefined) {
+        if (typeof scriptPath !== 'string' || !/\.ps1$/i.test(scriptPath) || /[\x00-\x1f]/.test(scriptPath)) throw new Error('Escolha um arquivo .ps1 válido para executar.')
+        script = await resolveInside(cwd, scriptPath)
+        if (!(await stat(script)).isFile()) throw new Error('O script precisa ser um arquivo .ps1.')
+      }
       if (this.disposed) throw new Error('Os terminais estão sendo encerrados.')
       const windows = process.platform === 'win32'
       const shell = windows
         ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-        : process.env.SHELL || '/bin/bash'
-      const pty = spawn(shell, windows ? ['-NoLogo', '-NoProfile'] : [], {
+        : script ? 'pwsh' : process.env.SHELL || '/bin/bash'
+      // Pass the script as a literal argv entry, never as interpolated shell input.
+      // Keep the shell interactive after completion, without bypassing execution policy.
+      const args = script ? ['-NoLogo', '-NoProfile', '-NoExit', '-File', script] : windows ? ['-NoLogo', '-NoProfile'] : []
+      const pty = spawn(shell, args, {
         name: 'xterm-256color', cols: 80, rows: 24, cwd,
         env: { ...terminalEnvironment(), TERM: 'xterm-256color', COLORTERM: 'truecolor' }
       })
       const number = (this.numbers.get(threadId) ?? 0) + 1
       this.numbers.set(threadId, number)
-      const info: TerminalSession = { id: randomUUID(), threadId, workspace, title: `${windows ? 'PowerShell' : path.basename(shell)} ${number}` }
+      const info: TerminalSession = { id: randomUUID(), threadId, workspace, title: script ? `${path.basename(scriptPath!)} · ${number}` : `${windows ? 'PowerShell' : path.basename(shell)} ${number}` }
       const session: Session = { info, pty, data: '', pending: '', sequence: 0 }
       this.sessions.set(info.id, session)
       pty.onData((data) => {

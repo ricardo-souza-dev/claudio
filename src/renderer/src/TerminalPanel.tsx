@@ -1,4 +1,4 @@
-import { Plus, Terminal as TerminalIcon, X } from 'lucide-react'
+import { PanelRight, Plus, Terminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -86,7 +86,7 @@ function TerminalView({ session, active, onError }: { session: TerminalSession; 
   return <div className="terminal-view" role="tabpanel" aria-label={session.title} hidden={!active} ref={host} />
 }
 
-export function TerminalPanel({ threadId, open, onClose }: { threadId: string; open: boolean; onClose(): void }) {
+export function TerminalPanel({ threadId, open, onClose, projectOpen, onToggleProject }: { threadId: string; open: boolean; onClose(): void; projectOpen: boolean; onToggleProject(): void }) {
   const [sessions, setSessions] = useState<TerminalSession[]>([])
   const [selected, setSelected] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -101,6 +101,8 @@ export function TerminalPanel({ threadId, open, onClose }: { threadId: string; o
     let alive = true
     const unsubscribe = api.on((event) => {
       if (event.type === 'terminal-changed') setSessions((all) => all.some((entry) => entry.id === event.terminal.id) ? all.map((entry) => entry.id === event.terminal.id ? event.terminal : entry) : [...all, event.terminal])
+      // Also select sessions launched from the project tree, not only the + button.
+      if (event.type === 'terminal-changed' && event.terminal.exitCode === undefined) setSelected((all) => ({ ...all, [event.terminal.threadId]: event.terminal.id }))
       if (event.type === 'terminal-closed') setSessions((all) => all.filter((entry) => entry.id !== event.id))
     })
     void api.terminal.list().then((list) => { if (alive) { setSessions(list); setLoaded(true) } }).catch((cause) => { if (alive) { setError(remoteErrorMessage(cause)); setLoaded(true) } })
@@ -148,6 +150,7 @@ export function TerminalPanel({ threadId, open, onClose }: { threadId: string; o
             </div>
           ))}
         </div>
+        <button className="terminal-icon" aria-label={projectOpen ? 'Ocultar Arquivos e Git' : 'Mostrar Arquivos e Git'} aria-pressed={projectOpen} title="Arquivos e Git" onClick={onToggleProject}><PanelRight size={15} /></button>
         <button className="terminal-icon" aria-label="Novo terminal" title="Novo terminal na pasta do projeto" disabled={creating} onClick={() => void create()}><Plus size={15} /></button>
         <button className="terminal-icon" aria-label="Ocultar terminais" title="Ocultar sem encerrar as sessões" onClick={onClose}><X size={15} /></button>
       </div>

@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import type { UniEvent } from '../src/shared/types'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
@@ -17,9 +20,55 @@ function mockPty() {
   }
 }
 
+const temporaryFolders: string[] = []
+async function temporaryProject(): Promise<string> {
+  const folder = await mkdtemp(path.join(tmpdir(), 'claudio-script-'))
+  temporaryFolders.push(folder)
+  return folder
+}
 beforeEach(() => fake.spawn.mockReset())
+afterEach(async () => {
+  await Promise.all(temporaryFolders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })))
+})
 
 describe('interactive terminals', () => {
+  it('opens scripts in their own interactive PowerShell session using literal arguments', async () => {
+    const workspace = await temporaryProject()
+    const file = "run ' & $ [demo].PS1"
+    await writeFile(path.join(workspace, file), 'Write-Output script-ok')
+    const pty = mockPty()
+    fake.spawn.mockReturnValue(pty)
+    const service = new TerminalService(() => undefined)
+    try {
+      const session = await service.create('thread', workspace, file)
+      const [shell, args, options] = fake.spawn.mock.calls[0]
+      expect(shell).toMatch(/powershell\.exe$|^pwsh$/i)
+      expect(args).toEqual(['-NoLogo', '-NoProfile', '-NoExit', '-File', await realpath(path.join(workspace, file))])
+      expect(args).not.toContain('-ExecutionPolicy')
+      expect(options.cwd).toBe(await realpath(workspace))
+      expect(session.title).toBe(`${file} · 1`)
+      service.write(session.id, 'echo still-interactive\r')
+      expect(pty.write).toHaveBeenCalledWith('echo still-interactive\r')
+    } finally { service.dispose() }
+  })
+
+  it('rejects invalid scripts and paths outside the project before starting a terminal', async () => {
+    const workspace = await temporaryProject()
+    const outside = await temporaryProject()
+    await writeFile(path.join(outside, 'outside.ps1'), 'Write-Output outside')
+    await writeFile(path.join(workspace, 'readme.txt'), 'not a script')
+    await mkdir(path.join(workspace, 'directory.ps1'))
+    await symlink(outside, path.join(workspace, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+    const service = new TerminalService(() => undefined)
+    try {
+      for (const file of ['readme.txt', 'missing.ps1', 'directory.ps1', 'bad\nname.ps1', path.join(outside, 'outside.ps1'), path.relative(workspace, path.join(outside, 'outside.ps1')), 'linked/outside.ps1', null]) {
+        await expect(service.create('thread', workspace, file as string)).rejects.toThrow()
+      }
+      expect(fake.spawn).not.toHaveBeenCalled()
+      expect(service.list()).toEqual([])
+    } finally { service.dispose() }
+  })
+
   it('filters app secrets and Electron control variables, keeping normal shell variables', () => {
     expect(terminalEnvironment({ PATH: 'bin', HOME: 'home', OPENAI_API_KEY: 'secret', X_AUTH_TOKEN: 'secret', X_SECRET: 'secret', ELECTRON_RUN_AS_NODE: '1', CLAUDIO_DATA_DIR: 'private', EMPTY: undefined })).toEqual({ PATH: 'bin', HOME: 'home' })
   })

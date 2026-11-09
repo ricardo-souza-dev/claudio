@@ -93,6 +93,8 @@ export function App() {
     document.documentElement.dataset.theme = prefs.theme
   }, [prefs.theme])
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const activeThreadId = useRef(thread?.id)
+  activeThreadId.current = thread?.id
   const [pickerOpen, setPickerOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toolCount, setToolCount] = useState(0)
@@ -268,7 +270,7 @@ export function App() {
   const withoutProject = thread.workspace === null && !needsProject
   const empty = thread.messages.length === 0 && !running
   const showTerminals = terminalOpen && thread.workspace !== null
-  const showPanel = panelOpen && thread.workspace !== null && !showTerminals
+  const showPanel = panelOpen && thread.workspace !== null
 
   return (
     <div className={`app${showPanel ? ' with-panel' : ''}${showTerminals ? ' with-terminal' : ''}`}>
@@ -385,7 +387,7 @@ export function App() {
               </button>
               {thread.workspace && <button className={`panel-toggle${showTerminals ? ' on' : ''}`} aria-label={showTerminals ? 'Ocultar painel de terminais' : 'Abrir painel de terminais'} aria-pressed={showTerminals} title="Terminal" onClick={() => setTerminalOpen(!terminalOpen)}><TerminalIcon size={15} /></button>}
               {thread.workspace && (
-                <button className={`panel-toggle${showPanel ? ' on' : ''}`} aria-label={showPanel ? 'Fechar painel do projeto' : 'Abrir painel do projeto'} aria-pressed={showPanel} title="Painel do projeto" onClick={() => { setTerminalOpen(false); setPanelOpen(!showPanel) }}>
+                <button className={`panel-toggle${showPanel ? ' on' : ''}`} aria-label={showPanel ? 'Fechar painel do projeto' : 'Abrir painel do projeto'} aria-pressed={showPanel} title="Painel do projeto" onClick={() => setPanelOpen(!showPanel)}>
                   <PanelRight size={14} />
                 </button>
               )}
@@ -472,9 +474,12 @@ export function App() {
         )}
       </main>
 
-      {showPanel && <ProjectPanel threadId={thread.id} workspace={thread.workspace!} running={running} commitModel={commitModel} onClose={() => setPanelOpen(false)} />}
+      {showPanel && <ProjectPanel threadId={thread.id} workspace={thread.workspace!} running={running} commitModel={commitModel} onRunScript={async (path) => {
+        const session = await api.terminal.create(thread.id, path)
+        if (activeThreadId.current === session.threadId) setTerminalOpen(true)
+      }} onClose={() => setPanelOpen(false)} />}
 
-      <TerminalPanel threadId={thread.id} open={showTerminals} onClose={() => setTerminalOpen(false)} />
+      <TerminalPanel threadId={thread.id} open={showTerminals} projectOpen={showPanel} onToggleProject={() => setPanelOpen(!showPanel)} onClose={() => setTerminalOpen(false)} />
 
       {pickerOpen && (
         <ModelPicker

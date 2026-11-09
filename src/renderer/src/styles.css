@@ -855,6 +855,35 @@ button:disabled {
 .tree-name.changed {
   color: var(--warn);
 }
+.tree-file-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: 4px;
+}
+.tree-file-row:hover,
+.tree-file-row:focus-within {
+  background: var(--bg-hover);
+}
+.tree-file-row > .tree-row {
+  flex: 1;
+  min-width: 0;
+}
+.tree-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 4px;
+  color: var(--ink-2);
+}
+.tree-run:hover {
+  background: var(--thread-soft);
+  color: var(--thread);
+}
 
 .panel-toggle {
   display: inline-flex;
@@ -3071,6 +3100,26 @@ button.chip:hover {
   grid-template-columns: 280px minmax(0, 1fr) minmax(340px, 38vw);
 }
 .app.with-terminal .topbar { padding-right: 18px; }
+/* Both panels have independent visibility. Keep the project at the far right. */
+.app.with-panel.with-terminal {
+  grid-template-columns: 200px minmax(0, 1fr) minmax(280px, 28vw) 280px;
+}
+.app.with-panel.with-terminal > .sidebar { grid-column: 1; grid-row: 1; }
+.app.with-panel.with-terminal > .main { grid-column: 2; grid-row: 1; }
+.app.with-panel.with-terminal > .terminal-panel {
+  grid-column: 3;
+  grid-row: 1;
+  position: static;
+  width: auto;
+  box-shadow: none;
+}
+.app.with-panel.with-terminal > .project-panel { grid-column: 4; grid-row: 1; }
+.app.with-panel.with-terminal .terminal-head { padding-right: 12px; }
+@media (min-width: 1600px) {
+  .app.with-panel.with-terminal {
+    grid-template-columns: 240px minmax(0, 1fr) minmax(340px, 28vw) 320px;
+  }
+}
 .terminal-panel {
   display: flex;
   flex-direction: column;
@@ -3112,6 +3161,24 @@ button.chip:hover {
   .terminal-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 15; width: min(520px, calc(100vw - 220px)); box-shadow: var(--shadow); }
   .app.with-terminal .topbar { padding-right: calc(var(--overlay-width) + 8px); }
 }
+@media (min-width: 981px) and (max-width: 1100px) {
+  .app.with-panel.with-terminal {
+    grid-template-columns: 160px minmax(0, 1fr) minmax(240px, 26vw) 260px;
+  }
+}
 @media (max-width: 980px) {
-  .app.with-terminal { grid-template-columns: 200px minmax(0, 1fr); }
+  .app.with-terminal,
+  .app.with-panel.with-terminal { grid-template-columns: 200px minmax(0, 1fr); }
+  /* The two drawers sit next to each other, rather than hiding one another. */
+  .app.with-panel.with-terminal > .project-panel {
+    position: fixed;
+    right: 0;
+    width: 260px;
+  }
+  .app.with-panel.with-terminal > .terminal-panel {
+    position: fixed;
+    right: 260px;
+    width: min(340px, calc(100vw - 460px));
+    box-shadow: var(--shadow);
+  }
 }
