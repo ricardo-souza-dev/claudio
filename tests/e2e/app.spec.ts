@@ -1705,12 +1705,13 @@ test('terminal and project panels stay side by side and toggle independently', a
     const terminalBounds = await terminal.boundingBox()
     expect(terminalBounds!.x).toBeGreaterThanOrEqual(0)
     expect(terminalBounds!.width).toBeGreaterThanOrEqual(240)
-    expect(terminalBounds!.x + terminalBounds!.width).toBeLessThanOrEqual(projectBounds!.x + 1)
-    expect(projectBounds!.x + projectBounds!.width).toBeLessThanOrEqual(width + 1)
+    expect(projectBounds!.x).toBeGreaterThanOrEqual(0)
+    expect(projectBounds!.x + projectBounds!.width).toBeLessThanOrEqual(terminalBounds!.x + 1)
+    expect(terminalBounds!.x + terminalBounds!.width).toBeLessThanOrEqual(width + 1)
     if (width > 980) {
       const mainBounds = await page.locator('.main').boundingBox()
       expect(mainBounds!.width).toBeGreaterThanOrEqual(280)
-      expect(mainBounds!.x + mainBounds!.width).toBeLessThanOrEqual(terminalBounds!.x + 1)
+      expect(mainBounds!.x + mainBounds!.width).toBeLessThanOrEqual(projectBounds!.x + 1)
     }
   }
   await project.getByRole('button', { name: 'Fechar painel', exact: true }).click()
