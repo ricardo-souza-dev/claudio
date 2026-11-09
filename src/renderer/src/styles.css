@@ -2757,6 +2757,11 @@ button.chip:hover {
   font: 400 11.5px var(--mono);
   color: var(--warn);
 }
+.picker-warn {
+  flex: none;
+  font: 400 11px var(--mono);
+  color: var(--warn);
+}
 .picker-recommended {
   flex: none;
   padding-block: 7px;

@@ -1,6 +1,6 @@
 import { Check, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { chooseAutoModel, contextFit, estimateTurn, unfitReason, type TaskInfo } from '../../shared/auto-model'
+import { chooseAutoModel, contextFit, contextShortfall, estimateTurn, unfitReason, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, type ModelInfo, type ModelListing, type ModelRef } from '../../shared/types'
 import { EFFORT_LABELS, formatEstimatedSeconds, formatEstimatedUsd, formatTokens } from './format'
 
@@ -36,7 +36,6 @@ function effortRange(model: ModelInfo): string {
   return `até ${EFFORT_LABELS[model.efforts.at(-1)!]}`
 }
 
-/** Warns before the limit is reached, so there is still room to switch or start over. */
 const NEAR_LIMIT_FRACTION = 0.75
 
 function FitWarning({ model, task }: { model: ModelInfo; task: TaskInfo }) {
@@ -44,7 +43,7 @@ function FitWarning({ model, task }: { model: ModelInfo; task: TaskInfo }) {
   if (!fit || fit.fraction < NEAR_LIMIT_FRACTION) return null
   return (
     <span className="picker-warn" title="A conversa já usa quase todo o contexto deste modelo">
-      perto do limite ({formatTokens(fit.remaining)} de espaço)
+      perto do limite ({formatTokens(Math.max(fit.remaining, 0))} de espaço)
     </span>
   )
 }
@@ -210,6 +209,7 @@ export function ModelPicker({ listing, loading, title, current, inConversation, 
                     <span className="picker-name">
                       <span className="picker-label">{model.label}</span>
                       {model.label !== model.id && <span className="picker-id">{model.id}</span>}
+                      <FitWarning model={model} task={task} />
                     </span>
                     <Figures model={model} task={task} />
                   </button>

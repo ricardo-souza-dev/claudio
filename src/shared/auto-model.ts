@@ -61,9 +61,8 @@ export function unfitReason(model: ModelInfo, task: TaskInfo): string | null {
   if (task.hasImages && model.imageInput === false) return 'não lê imagens'
   const needed = inputTokensOf(task)
   if (model.contextWindow && needed > model.contextWindow * CONTEXT_MARGIN) {
-    return needed > model.contextWindow
-      ? 'contexto já não cabe'
-      : `contexto não cabe (sobram ${model.contextWindow - needed} tokens)`
+    const shortfall = contextShortfall(model, task)
+    return shortfall !== null ? `contexto não cabe (faltam ${shortfall} tokens)` : 'contexto não cabe'
   }
   return null
 }
@@ -79,6 +78,12 @@ export function contextFit(model: ModelInfo, task: TaskInfo): ContextFit | null 
   if (!model.contextWindow) return null
   const used = inputTokensOf(task)
   return { remaining: model.contextWindow - used, fraction: used / model.contextWindow }
+}
+
+/** The shortfall, so the interface can say how much context is missing from the limit. */
+export function contextShortfall(model: ModelInfo, task: TaskInfo): number | null {
+  const fit = contextFit(model, task)
+  return fit && fit.remaining < 0 ? -fit.remaining : null
 }
 
 export interface TurnEstimate {
