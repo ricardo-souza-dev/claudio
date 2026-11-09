@@ -45,7 +45,15 @@ else process.exit(1)
 `)
         const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', `function gh { & '${process.execPath.replaceAll("'", "''")}' ./mock.cjs @args }; & ./upload.ps1`], {
           cwd: root, encoding: 'utf8', timeout: 30_000,
-          env: { ...process.env, SCENARIO: scenario, FIXTURE_HASH: createHash('sha256').update('fixture').digest('hex'), GITHUB_REF_NAME: 'v1.0.1', GITHUB_REPOSITORY: 'test/repo' }
+          env: {
+            ...process.env,
+            // Actions runs npm from PowerShell 7; restore the Windows PowerShell
+            // module directory for the 5.1 child, which inherits its parent's path.
+            PSModulePath: shell === 'powershell.exe'
+              ? `${path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'Modules')}${path.delimiter}${process.env.PSModulePath || ''}`
+              : process.env.PSModulePath,
+            SCENARIO: scenario, FIXTURE_HASH: createHash('sha256').update('fixture').digest('hex'), GITHUB_REF_NAME: 'v1.0.1', GITHUB_REPOSITORY: 'test/repo'
+          }
         })
         const calls = (await readFile(path.join(root, 'calls.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as string[])
         return { result, calls }
