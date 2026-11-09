@@ -134,7 +134,7 @@ O script publica como release normal e mais recente. Só então o site e os apli
 
 - `-Resume` exige a versão solicitada nos dois arquivos e `HEAD` no commit da tag local, na branch `main`. Não aumenta a versão nem recria a tag; se a tag já está no remoto, não faz outro push.
 - O prazo padrão para acompanhar Actions é de 60 minutos. Use `-TimeoutMinutes 120` para esperar mais. Fechar o terminal ou atingir esse prazo não cancela o workflow remoto.
-- Em falha de infraestrutura, reexecute o workflow no GitHub e use `-Resume`. Se o código de uma tag enviada estiver errado, corrija em outro commit e lance **uma versão maior**; não mova nem force a tag antiga.
+- Em falha de infraestrutura, reexecute o workflow no GitHub e use `-Resume`. O workflow usa o código gravado na tag: reexecutá-lo não inclui correções feitas depois. Se o código de uma tag enviada estiver errado, corrija em outro commit e lance **uma versão maior**; não mova nem force a tag antiga. Confira os rascunhos já criados antes de tentar novamente; não apague nem publique um rascunho sem revisá-lo.
 - Se uma falha acontecer antes de criar o commit e a tag, confira `git status` e os arquivos de versão antes de tentar de novo. O script não faz reset, stash ou rollback automático.
 - A versão precisa ser maior que a local e que as tags/releases estáveis existentes. Releases já publicadas nunca são editadas pelo script, e seus arquivos não são substituídos.
 - `-WhatIf` lê a configuração e as versões locais com Node, mas não executa Git, npm ou GitHub CLI. Para execução sem perguntas existe o parâmetro padrão `-Confirm:$false`; use-o apenas numa automação confiável, pois com `-Publish` ele também dispensa a confirmação pública final.
