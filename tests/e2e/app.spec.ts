@@ -85,6 +85,28 @@ async function openProject(app: ElectronApplication, page: Page): Promise<void> 
 
 const idle = (page: Page) => expect(page.getByRole('button', { name: 'Enviar', exact: true })).toBeVisible({ timeout: 20_000 })
 
+test('COM4 is a built-in provider and connects with the OpenAI-compatible protocol', async () => {
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await page.getByRole('button', { name: 'Conectar o primeiro provedor' }).click()
+  const row = page.locator('.provider').filter({ has: page.getByRole('button', { name: /^COM4/ }) })
+  await expect(row.getByRole('button', { name: /^COM4.*Sem chave/ })).toBeVisible()
+  await row.getByRole('button', { name: /^COM4/ }).click()
+  const address = row.getByRole('textbox', { name: 'Endereço' })
+  await expect(address).toHaveValue('https://llm.com4.com.br/v1')
+  await address.fill(`${llm.url}/compat/v1`)
+  await row.getByLabel('Chave de API').fill('fake-com4-key')
+  await row.getByRole('button', { name: 'Salvar e conectar' }).click()
+  await expect(row.getByText(/Conectado: \d+ modelos/)).toBeVisible()
+  await row.getByRole('button', { name: 'Começar a conversar' }).click()
+  await pickModel(page, 'chat-mock')
+  await send(page, 'olá')
+  await expect(page.getByText('[openai-chat]')).toBeVisible({ timeout: 15_000 })
+  expect(llm.last('openai-chat')!.headers.authorization).toBe('Bearer fake-com4-key')
+  expect(problems).toEqual([])
+  await app.close()
+})
+
 test('provider pickers curate OpenAI and Anthropic without restricting custom providers', async () => {
   await seedProviders()
   const allowed = ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-5.6']

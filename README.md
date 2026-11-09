@@ -41,7 +41,7 @@ npm install
 npm run dev
 ```
 
-Depois, escolha a pasta do projeto, abra **Ajustes → Provedores** e cole uma chave de API. A lista de modelos vem da API de cada provedor, então modelos novos aparecem sem atualizar o app. Ollama e LM Studio são detectados sozinhos se estiverem rodando.
+Depois, escolha a pasta do projeto, abra **Ajustes → Provedores** e cole uma chave de API. O COM4 já vem configurado com `https://llm.com4.com.br/v1`; basta informar a chave dele. A lista de modelos vem da API de cada provedor, então modelos novos aparecem sem atualizar o app. Ollama e LM Studio são detectados sozinhos se estiverem rodando.
 
 Atalhos: `Ctrl+K` troca de modelo, `Ctrl+N` abre uma conversa nova, `Enter` envia e `Shift+Enter` quebra a linha.
 

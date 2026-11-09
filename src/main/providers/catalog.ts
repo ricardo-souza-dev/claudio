@@ -31,6 +31,7 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
   { id: 'groq', name: 'Groq', protocol: 'openai-chat', baseUrl: 'https://api.groq.com/openai/v1', envKey: 'GROQ_API_KEY', keyUrl: 'https://console.groq.com/keys' },
   { id: 'together', name: 'Together AI', protocol: 'openai-chat', baseUrl: 'https://api.together.xyz/v1', envKey: 'TOGETHER_API_KEY', keyUrl: 'https://api.together.ai/settings/api-keys' },
   { id: 'openrouter', name: 'OpenRouter', protocol: 'openai-chat', baseUrl: 'https://openrouter.ai/api/v1', envKey: 'OPENROUTER_API_KEY', keyUrl: 'https://openrouter.ai/keys' },
+  { id: 'com4', name: 'COM4', protocol: 'openai-chat', baseUrl: 'https://llm.com4.com.br/v1' },
   { id: 'ollama', name: 'Ollama (local)', protocol: 'openai-chat', baseUrl: 'http://localhost:11434/v1', local: true },
   { id: 'lmstudio', name: 'LM Studio (local)', protocol: 'openai-chat', baseUrl: 'http://localhost:1234/v1', local: true }
 ]
