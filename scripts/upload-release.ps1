@@ -2,6 +2,7 @@
 # Never replaces published releases or existing assets.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if (Test-Path variable:PSNativeCommandUseErrorActionPreference) { $PSNativeCommandUseErrorActionPreference = $false }
 
 $tag = $env:GITHUB_REF_NAME
 $repository = $env:GITHUB_REPOSITORY
@@ -17,68 +18,66 @@ foreach ($file in $files) {
     }
 }
 
-# A draft has a different URL from its tag. Find by tag_name and refuse ambiguity
-# instead of uploading to whichever duplicate the API happens to return first.
-function Find-ReleaseDrafts {
-$found = @()
-$page = 1
-do {
-    $batchJson = & gh api "repos/$repository/releases?per_page=100&page=$page"
-    if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel listar as releases.' }
-    $batch = @(($batchJson -join "`n") | ConvertFrom-Json)
-    $found += @($batch | Where-Object { $_ -and $_.tag_name -eq $tag })
-    $page++
-} while ($batch.Count -eq 100)
-    return $found
+# ConvertFrom-Json writes the whole JSON array as one pipeline object on some
+# PowerShell versions. Assign first, then enumerate explicitly, on both 5.1 and 7.
+function Get-ApiPages {
+    param([string]$Endpoint)
+    $page = 1
+    do {
+        $json = & gh api "${Endpoint}?per_page=100&page=$page"
+        if ($LASTEXITCODE -ne 0) { throw "Falha ao consultar $Endpoint (pagina $page)." }
+        $parsed = ConvertFrom-Json -InputObject ($json -join "`n")
+        $batch = @($parsed)
+        foreach ($item in $batch) { if ($null -ne $item) { Write-Output $item } }
+        $page++
+    } while ($batch.Count -eq 100)
 }
-$releases = @(Find-ReleaseDrafts)
+
+$releases = @(Get-ApiPages "repos/$repository/releases" | Where-Object { $_.tag_name -eq $tag })
 if ($releases.Count -gt 1) { throw "Ha $($releases.Count) releases com a tag $tag. Resolva os rascunhos duplicados manualmente antes de continuar." }
 if ($releases.Count -eq 0) {
-    & gh release create $tag --repo $repository --verify-tag --draft --title $version --notes "Build Windows $version em verificacao."
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar o rascunho.' }
-    # The tag endpoint may return 404 for drafts. List authenticated releases again.
-    $releases = @(Find-ReleaseDrafts)
-    if ($releases.Count -ne 1) { throw "Esperado um unico rascunho para $tag apos criar; encontrados $($releases.Count)." }
-    $release = $releases[0]
+    # Verify the tag first: creating a release must never implicitly create a tag.
+    $null = & gh api "repos/$repository/git/ref/tags/$tag"
+    if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel confirmar a tag existente $tag." }
+    # Use the creation response directly. The releases list can lag behind a
+    # successful creation, and a draft's public URL does not contain its tag.
+    $createdJson = & gh api "repos/$repository/releases" --method POST -f "tag_name=$tag" -f "name=$version" -f "body=Build Windows $version em verificacao." -F draft=true -F prerelease=false
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar o rascunho. Confira no GitHub antes de tentar novamente.' }
+    $release = ConvertFrom-Json -InputObject ($createdJson -join "`n")
 } else {
     $release = $releases[0]
 }
-if (!$release.draft -or $release.prerelease) { throw "A release $tag ja foi publicada ou marcada como pre-release. Nenhum arquivo sera alterado." }
+if (!$release.id -or $release.tag_name -ne $tag -or !$release.draft -or $release.prerelease) {
+    throw "A release $tag nao e um rascunho normal valido. Nenhum arquivo sera alterado."
+}
+$releaseId = $release.id
 
-# Inspect assets by release ID, so even a later duplicate cannot redirect uploads.
-$assetsJson = & gh api "repos/$repository/releases/$($release.id)/assets?per_page=100"
-if ($LASTEXITCODE -ne 0) { throw 'Falha ao consultar os arquivos do rascunho.' }
-$assets = @(($assetsJson -join "`n") | ConvertFrom-Json)
+# Read and write assets by release ID, not by tag, to avoid selecting another draft.
+$assets = @(Get-ApiPages "repos/$repository/releases/$releaseId/assets")
 foreach ($file in $files) {
     $name = Split-Path -Leaf $file
-    $existing = @($assets | Where-Object { $_ -and $_.name -eq $name })
+    $existing = @($assets | Where-Object { $_.name -eq $name })
     if ($existing.Count -gt 1) { throw "Arquivo duplicado no rascunho: $name" }
     if ($existing.Count -eq 1) {
         $asset = $existing[0]
         $local = Get-Item -LiteralPath $file
         if ($asset.size -ne $local.Length) { throw "Arquivo existente com tamanho diferente: $name" }
-        # GitHub now returns a SHA-256 digest for release assets. When absent,
-        # download and compare instead of silently accepting an unrelated build.
         $digest = if ($asset.PSObject.Properties['digest']) { [string]$asset.digest } else { '' }
         if ($digest -match '^sha256:([a-fA-F0-9]{64})$') {
             $expected = $Matches[1]
-            $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
-            if ($actual -ine $expected) { throw "Arquivo existente com hash diferente: $name" }
         } else {
-            $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $downloadDir | Out-Null
-            try {
-                & gh release download $tag --repo $repository --dir $downloadDir --pattern $name
-                if ($LASTEXITCODE -ne 0) { throw "Falha ao conferir o arquivo existente: $name" }
-                if ((Get-FileHash -LiteralPath (Join-Path $downloadDir $name) -Algorithm SHA256).Hash -ine (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash) {
-                    throw "Arquivo existente com hash diferente: $name"
-                }
-            } finally { Remove-Item -LiteralPath $downloadDir -Recurse -Force -ErrorAction SilentlyContinue }
+            # Pipe raw bytes inside Node: PowerShell 5.1 can corrupt binary output.
+            $hashScript = 'const {spawn}=require("node:child_process");const {createHash}=require("node:crypto");const h=createHash("sha256"),p=spawn("gh",["api",process.argv[1],"-H","Accept: application/octet-stream"],{stdio:["ignore","pipe","inherit"]});p.stdout.on("data",b=>h.update(b));p.on("error",e=>{console.error(e);process.exitCode=1});p.on("close",c=>{if(c!==0)process.exitCode=1;else console.log(h.digest("hex"))})'
+            $expected = & node -e $hashScript "repos/$repository/releases/assets/$($asset.id)"
+            if ($LASTEXITCODE -ne 0) { throw "Falha ao conferir o arquivo existente: $name" }
         }
+        $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+        if ($actual -ine $expected) { throw "Arquivo existente com hash diferente: $name" }
         Write-Host "Ja conferido: $name"
         continue
     }
-    & gh release upload $tag $file --repo $repository
+    $encodedName = [Uri]::EscapeDataString($name)
+    $null = & gh api "https://uploads.github.com/repos/$repository/releases/$releaseId/assets?name=$encodedName" --method POST -H 'Content-Type: application/octet-stream' --input $file
     if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar $name" }
 }
 Write-Host "Rascunho $tag pronto, com os tres arquivos verificados."
