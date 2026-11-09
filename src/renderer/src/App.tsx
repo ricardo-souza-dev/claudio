@@ -246,12 +246,11 @@ export function App() {
     const estimate = targetInfo ? estimateTurn(targetInfo, task).cost : null
     if (estimate !== null && prefs.warnCostUsd > 0 && estimate >= prefs.warnCostUsd) {
       const label = modelLabel(target, listing.models)
-      const ok = window.confirm(`Esta mensagem está estimada em US$ ${estimate.toFixed(2)} com ${label}.\n\nEnviar mesmo assim?`)
+      const ok = window.confirm(`A primeira chamada está estimada em US$ ${estimate.toFixed(2)} com ${label}. Outras chamadas e ferramentas podem aumentar o custo.\n\nEnviar mesmo assim?`)
       if (!ok) return
     }
     const effort: Effort | null = prefs.effort
-    const costNote = estimate !== null ? ` Estimativa desta mensagem: US$ ${estimate.toFixed(2)}.` : ''
-    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, compactResponse: prefs.autoModel && (prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced')) === 'economy', note: `${note ?? ''}${costNote}`.trim() || undefined, attachments })
+    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, compactResponse: prefs.autoModel && (prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced')) === 'economy', note, attachments })
   }
   sendRef.current = send
 
@@ -388,19 +387,22 @@ export function App() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}>
-            <SettingsIcon size={15} aria-hidden /> Ajustes
-          </button>
-          <div className="theme-picker" role="group" aria-label="Tema da aparência">
-            {([
-              { value: 'light', label: 'Tema claro', Icon: Sun },
-              { value: 'dark', label: 'Tema escuro', Icon: Moon },
-              { value: 'system', label: 'Seguir tema do sistema', Icon: Monitor }
-            ] as const).map(({ value, label, Icon }) => (
-              <button key={value} aria-label={label} title={label} aria-pressed={prefs.theme === value} onClick={() => void store.setPrefs({ theme: value })}>
-                <Icon size={14} aria-hidden />
-              </button>
-            ))}
+          <Updates compact />
+          <div className="sidebar-footer-controls">
+            <button className="sidebar-settings" onClick={() => setSettingsOpen(true)}>
+              <SettingsIcon size={15} aria-hidden /> Ajustes
+            </button>
+            <div className="theme-picker" role="group" aria-label="Tema da aparência">
+              {([
+                { value: 'light', label: 'Tema claro', Icon: Sun },
+                { value: 'dark', label: 'Tema escuro', Icon: Moon },
+                { value: 'system', label: 'Seguir tema do sistema', Icon: Monitor }
+              ] as const).map(({ value, label, Icon }) => (
+                <button key={value} aria-label={label} title={label} aria-pressed={prefs.theme === value} onClick={() => void store.setPrefs({ theme: value })}>
+                  <Icon size={14} aria-hidden />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </aside>
@@ -435,8 +437,6 @@ export function App() {
             </div>
           )}
         </header>
-        <Updates compact />
-
         {needsProject ? (
           <ProjectChooser recent={recentProjects} error={projectError} onChoose={(folder) => void chooseProject(folder)} />
         ) : empty ? (

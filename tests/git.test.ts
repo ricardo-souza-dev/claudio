@@ -71,6 +71,24 @@ describe('leitura do status', () => {
   })
 })
 
+describe('filesystem explorer', () => {
+  it('includes ignored files and empty folders, loads only one level, and hides .git', async () => {
+    await commitBase()
+    await writeFile(path.join(root, '.gitignore'), 'ignored/\n')
+    await mkdir(path.join(root, 'ignored'))
+    await mkdir(path.join(root, 'empty'))
+    await writeFile(path.join(root, 'ignored', 'secret.txt'), 'test')
+    const entries = await service.listDirectory()
+    expect(entries).toContain('ignored/')
+    expect(entries).toContain('empty/')
+    expect(entries).not.toContain('.git/')
+    expect(entries).not.toContain('ignored/secret.txt')
+    expect(await service.listDirectory('ignored')).toEqual(['ignored/secret.txt'])
+    expect(await service.searchFiles()).toContain('ignored/secret.txt')
+    await expect(service.listDirectory('../')).rejects.toThrow()
+  })
+})
+
 describe('projeto sem Git', () => {
   it('reports it, lists files without dependency folders, and can start a repository', async () => {
     await mkdir(path.join(root, 'node_modules', 'x'), { recursive: true })

@@ -119,6 +119,8 @@ export class Runner {
     const controller = new AbortController()
     this.active.set(thread.id, controller)
     const { deps } = this
+    const runStartedAt = Date.now()
+    const firstNewMessage = thread.messages.length
     let failed = false
     delete thread.lastRun
     deps.emit({ type: 'run', threadId: thread.id, running: true })
@@ -163,6 +165,8 @@ export class Runner {
         deps.emit({ type: 'error', threadId: thread.id, text: (error as Error).message })
       }
     } finally {
+      const assistantIds = thread.messages.slice(firstNewMessage).filter((message) => message.role === 'assistant').map((message) => message.id)
+      if (assistantIds.length) (thread.runs ??= []).push({ assistantIds, durationMs: Math.max(0, Date.now() - runStartedAt) })
       thread.lastRun = controller.signal.aborted ? 'aborted' : failed ? 'error' : 'completed'
       thread.updatedAt = Date.now()
       this.publish(thread)

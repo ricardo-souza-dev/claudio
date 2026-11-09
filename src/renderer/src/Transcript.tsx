@@ -16,7 +16,8 @@ import {
   type ToolCallPart,
   type ToolResultPart
 } from '../../shared/types'
-import { formatFileSize, modelLabel, providerLabel, shortToolName, toolActivity, toolSummary, usageLabel } from './format'
+import { summarizeUsage } from '../../shared/usage'
+import { formatFileSize, formatElapsed, formatEstimatedUsd, formatTokens, modelLabel, providerLabel, shortToolName, toolActivity, toolSummary, usageLabel } from './format'
 import { Markdown } from './Markdown'
 import { api, type LiveTurn } from './store'
 
@@ -384,7 +385,7 @@ export function Transcript({ thread, models, live, running, approvals, questions
   let previousRole: Message['role'] | null = null
   // The model whose name is showing for the current turn, so later steps can skip repeating it.
   let namedInTurn: ModelRef | null = null
-  const items = thread.messages.map((message) => {
+  const items = thread.messages.map((message, messageIndex) => {
     if (message.role === 'tool') {
       previousRole = 'tool'
       return null
@@ -416,7 +417,18 @@ export function Transcript({ thread, models, live, running, approvals, questions
     previousAuthor = message.model ?? previousAuthor
     previousRole = 'assistant'
     namedInTurn = message.model ?? namedInTurn
+    const nextUser = thread.messages.findIndex((entry, index) => index > messageIndex && entry.role === 'user')
+    const end = nextUser < 0 ? thread.messages.length : nextUser
+    const lastInTurn = !thread.messages.slice(messageIndex + 1, end).some((entry) => entry.role === 'assistant')
+    const turnStart = thread.messages.slice(0, messageIndex).findLastIndex((entry) => entry.role === 'user')
+    const turnMessages = thread.messages.slice(turnStart + 1, end)
+    const run = thread.runs?.find((entry) => entry.assistantIds.at(-1) === message.id)
+    const runMessages = run ? thread.messages.filter((entry) => run.assistantIds.includes(entry.id)) : turnMessages
+    const turnUsage = summarizeUsage(runMessages, models)
+    const hasUsage = runMessages.some((entry) => entry.role === 'assistant' && entry.usage)
+    const missingUsage = runMessages.some((entry) => entry.role === 'assistant' && !entry.usage)
     return (
+      <div key={message.id}>
       <AssistantMessage
         key={message.id}
         message={message}
@@ -429,6 +441,15 @@ export function Transcript({ thread, models, live, running, approvals, questions
         threadId={thread.id}
         running={running}
       />
+      {(run || (lastInTurn && (nextUser >= 0 || !running))) && (hasUsage || run) && (
+        <div className="turn-note" title="Calculado com os tokens informados pelo provedor e os preços disponíveis; pode diferir da cobrança.">
+          {run && <span>Tempo: {formatElapsed(run.durationMs)} · </span>}
+          {hasUsage && <span>Tokens: {formatTokens(turnUsage.input)} entrada · {formatTokens(turnUsage.output)} saída{missingUsage ? ' (parcial)' : ''} · </span>}
+          {!hasUsage && <span>Tokens indisponíveis · </span>}
+          Custo estimado desta resposta: {!hasUsage || (!turnUsage.costComplete && turnUsage.cost === 0) ? 'preço indisponível' : `${formatEstimatedUsd(turnUsage.cost)}${turnUsage.costComplete ? '' : ' (parcial)'}`}
+        </div>
+      )}
+      </div>
     )
   })
 

@@ -45,6 +45,7 @@ const api: UniApi = {
     checkoutPr: call('project.checkoutPr'),
     commitMessage: call('project.commitMessage'),
     files: call('project.files'),
+    directory: call('project.directory'),
     read: call('project.read')
   },
   system: {

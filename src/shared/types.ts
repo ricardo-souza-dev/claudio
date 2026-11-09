@@ -140,6 +140,8 @@ export interface Thread {
   messages: Message[]
   /** The task list the current model keeps while it works. Never sent back to models. */
   plan?: PlanItem[]
+  /** Completed executions, separate from the append-only provider history. */
+  runs?: { assistantIds: string[]; durationMs: number }[]
   /** Last execution outcome, separate from provider messages (which remain append-only). */
   lastRun?: 'completed' | 'aborted' | 'error'
 }
@@ -467,6 +469,7 @@ export interface UniApi {
     /** Has a model read the changes and write the commit message. */
     commitMessage(threadId: string, repo: string, model: ModelRef): Promise<string>
     files(threadId: string): Promise<string[]>
+    directory(threadId: string, directory: string): Promise<string[]>
     read(threadId: string, path: string): Promise<ProjectFile>
   }
   system: {

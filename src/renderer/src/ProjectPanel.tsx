@@ -596,9 +596,9 @@ function buildTree(paths: string[]): TreeNode[] {
   const root: TreeNode = { name: '', path: '', children: [] }
   for (const file of paths) {
     let node = root
-    const pieces = file.split('/')
+    const pieces = file.replace(/\/$/, '').split('/')
     pieces.forEach((piece, index) => {
-      const isFile = index === pieces.length - 1
+      const isFile = index === pieces.length - 1 && !file.endsWith('/')
       const path = pieces.slice(0, index + 1).join('/')
       let child = node.children!.find((entry) => entry.name === piece)
       if (!child) {
@@ -664,6 +664,8 @@ function TreeRows({ nodes, depth, codes, open, onToggle, onFile, launching, onRu
 }
 
 function FilesTab({ threadId, statuses, refreshKey, onView, onRunScript }: { threadId: string; statuses: Record<string, GitStatus>; refreshKey: number; onView(viewing: Viewing): void; onRunScript(path: string): Promise<void> }) {
+  const [directories, setDirectories] = useState<Record<string, string[]>>({})
+  const [treeError, setTreeError] = useState<string | null>(null)
   const [paths, setPaths] = useState<string[] | null>(null)
   const [launching, setLaunching] = useState(false)
   const launchingRef = useRef(false)
@@ -682,11 +684,25 @@ function FilesTab({ threadId, statuses, refreshKey, onView, onRunScript }: { thr
 
   useEffect(() => {
     let cancelled = false
-    void api.project.files(threadId).then((files) => !cancelled && setPaths(files))
+    setDirectories({})
+    setTreeError(null)
+    void Promise.all(['', ...open].map(async (directory) => [directory, await api.project.directory(threadId, directory)] as const))
+      .then((entries) => !cancelled && setDirectories(Object.fromEntries(entries)))
+      .catch((error) => !cancelled && setTreeError(remoteErrorMessage(error)))
     return () => {
       cancelled = true
     }
   }, [threadId, refreshKey])
+
+  useEffect(() => {
+    if (!filter.trim()) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void api.project.files(threadId).then((files) => !cancelled && setPaths(files))
+        .catch((error) => !cancelled && setTreeError(remoteErrorMessage(error)))
+    }, 200)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [threadId, refreshKey, filter])
 
   const codes = useMemo(() => {
     const map = new Map<string, string>()
@@ -695,7 +711,7 @@ function FilesTab({ threadId, statuses, refreshKey, onView, onRunScript }: { thr
     }
     return map
   }, [statuses])
-  const tree = useMemo(() => buildTree(paths ?? []), [paths])
+  const tree = useMemo(() => buildTree(Object.values(directories).flat()), [directories])
   const terms = filter.toLowerCase().split(/\s+/).filter(Boolean)
   const matches = terms.length > 0 ? (paths ?? []).filter((path) => terms.every((term) => path.toLowerCase().includes(term))) : null
   const openFile = (path: string): void => onView({ kind: 'file', path })
@@ -703,7 +719,7 @@ function FilesTab({ threadId, statuses, refreshKey, onView, onRunScript }: { thr
   return (
     <>
       <input className="panel-input" aria-label="Filtrar arquivos" placeholder="Filtrar arquivos" spellCheck={false} value={filter} onChange={(event) => setFilter(event.target.value)} />
-      {launchError && <p className="result failed" role="alert">{launchError}</p>}
+      {(launchError || treeError) && <p className="result failed" role="alert">{launchError || treeError}</p>}
       <div className="tree">
         {matches ? (
           matches.length === 0 ? (
@@ -722,17 +738,20 @@ function FilesTab({ threadId, statuses, refreshKey, onView, onRunScript }: { thr
             onFile={openFile}
             launching={launching}
             onRunScript={(path) => void runScript(path)}
-            onToggle={(path) =>
+            onToggle={(path) => {
+              if (!directories[path]) void api.project.directory(threadId, path)
+                .then((entries) => setDirectories((current) => ({ ...current, [path]: entries })))
+                .catch((error) => setTreeError(remoteErrorMessage(error)))
               setOpen((current) => {
                 const next = new Set(current)
                 if (next.has(path)) next.delete(path)
                 else next.add(path)
                 return next
               })
-            }
+            }}
           />
         )}
-        {paths?.length === 0 && <p className="panel-empty">Pasta vazia.</p>}
+        {directories['']?.length === 0 && <p className="panel-empty">Pasta vazia.</p>}
       </div>
     </>
   )

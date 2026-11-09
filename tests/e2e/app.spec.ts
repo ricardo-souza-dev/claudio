@@ -397,6 +397,10 @@ test('one thread through four providers, with markdown rendered safely', async (
   await send(page, 'Primeira pergunta: como organizo este projeto?')
   await expect(page.getByText('[anthropic]')).toBeVisible({ timeout: 15_000 })
   await idle(page)
+  await expect(page.getByText('Custo estimado desta resposta:', { exact: false }).first()).toBeVisible()
+  await expect(page.locator('.turn-note', { hasText: 'Custo estimado desta resposta:' }).first()).toContainText('Tempo:')
+  await expect(page.locator('.turn-note', { hasText: 'Custo estimado desta resposta:' }).first()).toContainText('10 entrada · 12 saída')
+  await expect(page.getByText('Estimativa desta mensagem:', { exact: false })).toHaveCount(0)
 
   await pickModel(page, 'gpt-mock')
   await send(page, 'Segunda pergunta, agora com outro modelo.')

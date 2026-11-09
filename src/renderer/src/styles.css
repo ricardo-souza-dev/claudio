@@ -1232,6 +1232,10 @@ button:disabled {
 }
 
 .sidebar-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+.sidebar-footer-controls {
   flex: none;
   display: flex;
   align-items: center;
@@ -3227,3 +3231,6 @@ button.chip:hover {
     box-shadow: var(--shadow);
   }
 }
+
+.sidebar-footer .update-banner { padding: 0 0 10px; border-bottom: 1px solid var(--rule); background: transparent; overflow-wrap: anywhere; }
+.sidebar-footer .update-banner .button { display: block; width: 100%; margin: 8px 0 0; }

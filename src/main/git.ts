@@ -391,6 +391,25 @@ export class GitService {
     await this.gh(['pr', 'checkout', String(number)], { timeout: NETWORK_TIMEOUT_MS })
   }
 
+  /** Full filesystem search, without Git filters or a global entry limit. */
+  async searchFiles(directory = ''): Promise<string[]> {
+    const files: string[] = []
+    for (const entry of await this.listDirectory(directory)) {
+      if (entry.endsWith('/')) files.push(...await this.searchFiles(entry.slice(0, -1)))
+      else files.push(entry)
+    }
+    return files
+  }
+
+  /** Immediate filesystem entries, including ignored files and empty folders. */
+  async listDirectory(directory = ''): Promise<string[]> {
+    const absolute = await resolveInside(this.root, directory || '.')
+    const entries = await readdir(absolute, { withFileTypes: true })
+    return entries.filter((entry) => entry.name !== '.git' && !entry.isSymbolicLink())
+      .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
+      .map((entry) => (directory ? directory + '/' : '') + entry.name + (entry.isDirectory() ? '/' : ''))
+  }
+
   /** Project-relative paths with forward slashes. In a repository, follows its .gitignore. */
   async listFiles(): Promise<string[]> {
     if (!(await stat(path.join(this.root, '.git')).catch(() => null))) {

@@ -301,7 +301,8 @@ async function start(): Promise<void> {
     const { adapter, info } = await models.resolve(ref)
     return generateCommitMessage(adapter, info, changes)
   })
-  handle('project.files', async (threadId: string) => (await gitFor(threadId)).listFiles())
+  handle('project.directory', async (threadId: string, directory: string) => (await gitFor(threadId)).listDirectory(directory))
+  handle('project.files', async (threadId: string) => (await gitFor(threadId)).searchFiles())
   handle('project.read', async (threadId: string, file: string) => (await gitFor(threadId)).read(file))
 
   handle('mcp.list', () => mcp.status())
