@@ -19,23 +19,27 @@ foreach ($file in $files) {
 
 # A draft has a different URL from its tag. Find by tag_name and refuse ambiguity
 # instead of uploading to whichever duplicate the API happens to return first.
-$releases = @()
+function Find-ReleaseDrafts {
+$found = @()
 $page = 1
 do {
     $batchJson = & gh api "repos/$repository/releases?per_page=100&page=$page"
     if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel listar as releases.' }
-    $batch = @(ConvertFrom-Json -InputObject ($batchJson -join "`n"))
-    $releases += @($batch | Where-Object { $_.tag_name -eq $tag })
+    $batch = @(($batchJson -join "`n") | ConvertFrom-Json)
+    $found += @($batch | Where-Object { $_ -and $_.tag_name -eq $tag })
     $page++
 } while ($batch.Count -eq 100)
+    return $found
+}
+$releases = @(Find-ReleaseDrafts)
 if ($releases.Count -gt 1) { throw "Ha $($releases.Count) releases com a tag $tag. Resolva os rascunhos duplicados manualmente antes de continuar." }
 if ($releases.Count -eq 0) {
     & gh release create $tag --repo $repository --verify-tag --draft --title $version --notes "Build Windows $version em verificacao."
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar o rascunho.' }
-    # Fetch the created release, never assume that a tag lookup is unique.
-    $releaseJson = & gh api "repos/$repository/releases/tags/$tag"
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao consultar o rascunho criado.' }
-    $release = ConvertFrom-Json -InputObject ($releaseJson -join "`n")
+    # The tag endpoint may return 404 for drafts. List authenticated releases again.
+    $releases = @(Find-ReleaseDrafts)
+    if ($releases.Count -ne 1) { throw "Esperado um unico rascunho para $tag apos criar; encontrados $($releases.Count)." }
+    $release = $releases[0]
 } else {
     $release = $releases[0]
 }
@@ -44,10 +48,10 @@ if (!$release.draft -or $release.prerelease) { throw "A release $tag ja foi publ
 # Inspect assets by release ID, so even a later duplicate cannot redirect uploads.
 $assetsJson = & gh api "repos/$repository/releases/$($release.id)/assets?per_page=100"
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao consultar os arquivos do rascunho.' }
-$assets = @(ConvertFrom-Json -InputObject ($assetsJson -join "`n"))
+$assets = @(($assetsJson -join "`n") | ConvertFrom-Json)
 foreach ($file in $files) {
     $name = Split-Path -Leaf $file
-    $existing = @($assets | Where-Object { $_.name -eq $name })
+    $existing = @($assets | Where-Object { $_ -and $_.name -eq $name })
     if ($existing.Count -gt 1) { throw "Arquivo duplicado no rascunho: $name" }
     if ($existing.Count -eq 1) {
         $asset = $existing[0]
