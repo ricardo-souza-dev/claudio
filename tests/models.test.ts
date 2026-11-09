@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { chooseAutoModel, estimateTurn, unfitReason, weighTask, type TaskInfo } from '../src/shared/auto-model'
+import { chooseAutoModel, contextFit, contextShortfall, estimateTurn, unfitReason, weighTask, type TaskInfo } from '../src/shared/auto-model'
 import { clampEffort, type Message, type ModelInfo, type ModelPricing } from '../src/shared/types'
 import { outputSinceLastUser, summarizeUsage } from '../src/shared/usage'
 import { defaultEfforts, ModelFactsStore, trimCatalog } from '../src/main/model-facts'
@@ -177,9 +177,11 @@ describe('modelo automático', () => {
     // 50k of the 100k window used: within 80% of the limit, so the model still fits.
     expect(unfitReason(small, task('oi', { contextTokens: 50_000 }))).toBeNull()
     // 85k used: over the margin but under the limit, so the fit shows the slack.
-    expect(unfitReason(small, task('oi', { contextTokens: 85_000 }))).toBe('contexto não cabe (sobram 14 999 tokens)')
+    expect(unfitReason(small, task('oi', { contextTokens: 85_000 }))).toBe('contexto não cabe')
     // Past the limit entirely.
-    expect(unfitReason(small, task('oi', { contextTokens: 120_000 }))).toBe('contexto já não cabe')
+    expect(unfitReason(small, task('oi', { contextTokens: 120_000 }))).toBe('contexto não cabe (faltam 20040 tokens)')
+    expect(contextShortfall(small, task('oi', { contextTokens: 120_000 }))).toBe(20040)
+    expect(contextShortfall(small, task('oi', { contextTokens: 85_000 }))).toBeNull()
   })
 
   it('declines to choose when no model has a known price', () => {
