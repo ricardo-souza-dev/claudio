@@ -240,6 +240,18 @@ describe('comandos', () => {
     expect(result.isError).toBe(true)
     expect(result.content).toContain('Tempo esgotado')
   }, 25_000)
+
+  it('compacts very long command output but keeps the beginning and end', async () => {
+    const command = process.platform === 'win32'
+      ? "1..520 | ForEach-Object { 'linha ' + $_ }"
+      : "for i in $(seq 1 520); do echo \"linha $i\"; done"
+    const result = await tool('run_command').run({ command }, signal)
+    expect(result.isError).toBeFalsy()
+    expect(result.content).toContain('linha 1')
+    expect(result.content).toContain('linha 520')
+    expect(result.content).toContain('linhas de saída omitidas')
+    expect(result.content.split('\n').length).toBeLessThan(430)
+  }, 20_000)
 })
 
 describe('permissões', () => {

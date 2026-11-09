@@ -13,6 +13,9 @@ const MAX_LIST_ENTRIES = 300
 const PREVIEW_CHARS = 20_000
 const COMMAND_HEAD_CHARS = 8000
 const COMMAND_TAIL_CHARS = 4000
+const COMMAND_MAX_LINES = 400
+const COMMAND_EDGE_LINES = 120
+const COMMAND_IMPORTANT_LINES = 160
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 600_000
 
@@ -135,6 +138,46 @@ function killTree(pid: number | undefined): void {
   }
 }
 
+const IMPORTANT_COMMAND_LINE = /\b(error|erro|failed|failure|fatal|exception|traceback|warning|warn|denied|not found|cannot|não|código de saída|exit code)\b|:\d+:\d+/i
+
+function compactCommandOutput(text: string): string {
+  const normalized = text.replace(/\r(?!\n)/g, '\n')
+  const rawLines = normalized.split('\n')
+  const collapsed: string[] = []
+  let previous: string | null = null
+  let previousKey: string | null = null
+  let repeated = 0
+  const flush = (): void => {
+    if (previous === null) return
+    collapsed.push(repeated > 1 ? `${previous} [repetido ${repeated} vezes]` : previous)
+  }
+  for (const line of rawLines) {
+    const comparable = line.trim()
+    if (comparable && comparable === previousKey) {
+      repeated += 1
+      continue
+    }
+    flush()
+    previous = line
+    previousKey = comparable
+    repeated = 1
+  }
+  flush()
+  if (collapsed.length <= COMMAND_MAX_LINES) return collapsed.join('\n')
+
+  const head = collapsed.slice(0, COMMAND_EDGE_LINES)
+  const tail = collapsed.slice(-COMMAND_EDGE_LINES)
+  const middle = collapsed.slice(COMMAND_EDGE_LINES, -COMMAND_EDGE_LINES)
+  const important = middle.filter((line) => IMPORTANT_COMMAND_LINE.test(line)).slice(0, COMMAND_IMPORTANT_LINES)
+  const kept = head.length + important.length + tail.length
+  return [
+    ...head,
+    `[… ${collapsed.length - kept} linhas de saída omitidas]`,
+    ...(important.length ? ['[Linhas importantes do meio]', ...important] : []),
+    ...tail
+  ].join('\n')
+}
+
 function runCommand(command: string, cwd: string, timeoutMs: number, signal: AbortSignal): Promise<ToolResult> {
   if (signal.aborted) return Promise.resolve({ content: 'Cancelado pelo usuário.', isError: true })
   return new Promise((resolve) => {
@@ -183,7 +226,8 @@ function runCommand(command: string, cwd: string, timeoutMs: number, signal: Abo
     }
     child.on('error', (error) => finish({ content: `Não foi possível executar: ${error.message}`, isError: true }))
     child.on('close', (code) => {
-      const output = dropped > 0 ? `${head}\n[… ${dropped} caracteres omitidos]\n${tail}` : head + tail
+      const rawOutput = dropped > 0 ? `${head}\n[… ${dropped} caracteres omitidos]\n${tail}` : head + tail
+      const output = compactCommandOutput(rawOutput)
       const status = ending ?? (code === 0 ? '' : `Código de saída: ${code}`)
       finish({ content: [output.trimEnd(), status].filter(Boolean).join('\n') || '(sem saída)', isError: ending !== null || code !== 0 })
     })

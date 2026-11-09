@@ -63,7 +63,7 @@ export type StopReason = 'end' | 'tool_use' | 'length' | 'refusal' | 'aborted' |
 
 export interface TextPart {
   /** App-authored mode context; render a localized label, but replay the original text. */
-  appContext?: 'plan'
+  appContext?: 'plan' | 'compact'
   type: 'text'
   text: string
 }
@@ -203,6 +203,8 @@ export type SendRequest = {
   permissionMode: PermissionMode
   /** Null or absent leaves the choice to the model's own default. */
   effort?: Effort | null
+  /** Ask the model to keep prose very short while preserving code, commands and errors. */
+  compactResponse?: boolean
   /** Shown to the user when the run starts, such as why a model was chosen. */
   note?: string
   attachments?: OutgoingAttachment[]

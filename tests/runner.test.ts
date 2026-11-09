@@ -140,6 +140,18 @@ describe('uma conversa, vários modelos', () => {
     expect(llm.last('gemini')!.body.systemInstruction.parts[0].text).toBe(frozen)
   })
 
+  it('adds compact-response context only to the current user turn', async () => {
+    const h = harness()
+    const thread = newThread()
+
+    await h.runner.send(thread, { ...agent(thread, 'seja breve', COMPAT), compactResponse: true })
+
+    const body = JSON.stringify(llm.last('openai-chat')!.body.messages)
+    expect(body).toContain('Compact response')
+    expect(body).toContain('Preserve code, commands, API names, file paths and error messages exactly')
+    expect(thread.system).not.toContain('Compact response')
+  })
+
   it('replays earlier turns byte-identically to Anthropic after other models intervene', async () => {
     const h = harness()
     const thread = newThread()

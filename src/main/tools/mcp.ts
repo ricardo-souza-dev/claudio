@@ -10,7 +10,7 @@ import type { Tool, ToolResult } from './types'
 
 const CONNECT_TIMEOUT_MS = 60_000
 const CALL_TIMEOUT_MS = 300_000
-const MAX_RESULT_CHARS = 100_000
+const MAX_RESULT_CHARS = 30_000
 const MAX_TOOL_NAME = 64
 
 export interface McpServerConfig {

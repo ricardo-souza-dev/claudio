@@ -239,7 +239,7 @@ export function App() {
     }
     const effort: Effort | null = prefs.economyMode ? (prefs.effort ?? 'low') : prefs.effort
     const costNote = estimate !== null ? ` Estimativa desta mensagem: US$ ${estimate.toFixed(2)}.` : ''
-    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, note: `${note ?? ''}${costNote}`.trim() || undefined, attachments })
+    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, compactResponse: prefs.economyMode, note: `${note ?? ''}${costNote}`.trim() || undefined, attachments })
   }
   sendRef.current = send
 

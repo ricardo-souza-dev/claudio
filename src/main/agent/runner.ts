@@ -27,6 +27,8 @@ import { buildSystemPrompt } from './context'
 
 const MAX_AGENT_STEPS = 40
 const TITLE_LENGTH = 60
+const COMPACT_RESPONSE_CONTEXT =
+  '\n[Claudio mode: Compact response. Answer like a terse technical agent: no greetings, no courtesy, no obvious narration, no recap unless needed. Prefer bullets and short sentences. Preserve code, commands, API names, file paths and error messages exactly.]'
 
 export interface RunnerDeps {
   resolveModel(ref: ModelRef): Promise<{ adapter: ProviderAdapter; info: ModelInfo }>
@@ -136,6 +138,7 @@ export class Runner {
           parts: [
             ...attachments,
             ...(text ? [{ type: 'text' as const, text }] : []),
+            ...(request.compactResponse ? [{ type: 'text' as const, appContext: 'compact' as const, text: COMPACT_RESPONSE_CONTEXT }] : []),
             ...(request.permissionMode === 'plan' ? [{ type: 'text' as const, appContext: 'plan' as const, text: '\n[Claudio mode: Plan. Investigate using read-only tools and present your proposed plan as your final answer. Do not edit files, run commands, or use external tools. The app will ask the user to approve the plan before execution. Do not request approval through ask_user.]' }] : [])
           ],
           createdAt: Date.now()
