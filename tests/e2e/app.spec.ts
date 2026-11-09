@@ -513,6 +513,8 @@ test('permission modes: menu, persistence, bypass warning and approved planning'
   await pickModel(page, 'chat-mock')
   const mode = () => page.getByRole('button', { name: /^Modo:/ })
   await expect(mode()).toHaveText('Manual')
+  await expect(mode().locator('svg')).toHaveCount(0)
+  await expect(mode()).toHaveCSS('font-size', '14px')
   await mode().click()
   await expect(page.getByRole('menu', { name: 'Modo', exact: true })).toBeVisible()
   for (const theme of ['light', 'dark']) {
@@ -523,6 +525,12 @@ test('permission modes: menu, persistence, bypass warning and approved planning'
     expect(bounds!.x).toBeGreaterThanOrEqual(0)
     expect(bounds!.y).toBeGreaterThanOrEqual(0)
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(760)
+    await expect(mode()).toHaveCSS('color', await page.locator('.permission-menu').evaluate((element) => getComputedStyle(element).color))
+    const shortcuts = page.locator('.permission-menu > button:not(.permission-bypass) .permission-shortcut')
+    const edges = await shortcuts.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().right))
+    expect(Math.max(...edges) - Math.min(...edges)).toBeLessThanOrEqual(1)
+    await expect(page.locator('.permission-bypass .permission-shortcut')).toHaveText('Ativar')
+    await shot(page, `permission-menu-${theme}`)
   }
   await page.setViewportSize({ width: 1240, height: 820 })
   await page.getByRole('menuitemradio', { name: /^Automático/ }).click()

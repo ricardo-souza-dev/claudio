@@ -1,12 +1,12 @@
-import { Check, ChevronDown } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PermissionMode } from '../../shared/types'
 
 const MODES = [
-  { value: 'auto', label: 'Automático', description: 'Regras locais: aceita edições; confirma comandos e acesso externo' },
+  { value: 'auto', label: 'Automático', description: 'Claudio aplica regras locais de permissão' },
   { value: 'ask', label: 'Manual', description: 'Perguntar antes de fazer alterações' },
-  { value: 'auto-edit', label: 'Aceitar edições', description: 'Aceitar todas as edições comuns automaticamente' },
-  { value: 'plan', label: 'Plano', description: 'Investigar e apresentar um plano para você aprovar antes de executar' }
+  { value: 'auto-edit', label: 'Aceitar edições', description: 'Aceitar edições comuns automaticamente' },
+  { value: 'plan', label: 'Plano', description: 'Criar um plano e pedir aprovação antes de executar' }
 ] as const
 
 export function PermissionPicker({ value, disabled, onChange }: { value: PermissionMode; disabled: boolean; onChange(value: PermissionMode): void }) {
@@ -57,7 +57,7 @@ export function PermissionPicker({ value, disabled, onChange }: { value: Permiss
             requestAnimationFrame(() => root.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus())
           }
         }}>
-        {current}<ChevronDown size={12} aria-hidden />
+        {current}
       </button>
       {open && !confirmBypass && (
         <div className="permission-menu" role="menu" aria-label="Modo">
