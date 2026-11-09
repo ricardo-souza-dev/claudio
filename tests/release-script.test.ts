@@ -11,7 +11,7 @@ it('builds without electron-builder publishing and uploads only through the cont
   expect(workflow).not.toContain('--publish always')
   expect(workflow).toContain('run: ./scripts/upload-release.ps1')
   expect(uploader).toContain('if ($releases.Count -gt 1)')
-  expect(uploader).toContain('if (!$release.draft -or $release.prerelease)')
+  expect(uploader).toContain('!$release.draft -or $release.prerelease')
   expect(uploader).toContain('if ($existing.Count -eq 1)')
   expect(uploader).not.toContain('--clobber')
 })

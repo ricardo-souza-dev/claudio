@@ -67,8 +67,10 @@ foreach ($file in $files) {
             $expected = $Matches[1]
         } else {
             # Pipe raw bytes inside Node: PowerShell 5.1 can corrupt binary output.
-            $hashScript = 'const {spawn}=require("node:child_process");const {createHash}=require("node:crypto");const h=createHash("sha256"),p=spawn("gh",["api",process.argv[1],"-H","Accept: application/octet-stream"],{stdio:["ignore","pipe","inherit"]});p.stdout.on("data",b=>h.update(b));p.on("error",e=>{console.error(e);process.exitCode=1});p.on("close",c=>{if(c!==0)process.exitCode=1;else console.log(h.digest("hex"))})'
-            $expected = & node -e $hashScript "repos/$repository/releases/assets/$($asset.id)"
+            $hashScript = 'const {spawn}=require("node:child_process");const {createHash}=require("node:crypto");const h=createHash("sha256"),p=spawn("gh",["api",process.argv[3],"-H","Accept: application/octet-stream"],{stdio:["ignore","pipe","inherit"]});p.stdout.on("data",b=>h.update(b));p.on("error",e=>{console.error(e);process.exitCode=1});p.on("close",c=>{if(c!==0)process.exitCode=1;else console.log(h.digest("hex"))})'
+            # Windows PowerShell 5.1 otherwise strips quotes from native arguments.
+            $encodedScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($hashScript))
+            $expected = & node -e 'eval(Buffer.from(process.argv[1],process.argv[2]).toString())' $encodedScript base64 "repos/$repository/releases/assets/$($asset.id)"
             if ($LASTEXITCODE -ne 0) { throw "Falha ao conferir o arquivo existente: $name" }
         }
         $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
