@@ -136,6 +136,12 @@ describe('modelo automático', () => {
     expect(chooseAutoModel(models, task('refatore tudo'), null)?.model.id).not.toBe('carissimo')
   })
 
+  it('spends less aggressively in economy mode', () => {
+    expect(chooseAutoModel(models, task('corrija este teste'), null, { economy: true })?.model.id).toBe('medio')
+    expect(chooseAutoModel(models, task('refatore tudo'), null, { economy: true })?.model.id).toBe('medio')
+    expect(chooseAutoModel(models, task('oi'), { provider: 'p', id: 'forte' }, { economy: true })?.model.id).toBe('barato')
+  })
+
   it('skips models without tools, snapshots, previews, free tiers, old models and unknown prices', () => {
     const skipped = ['sem-ferramentas', 'forte-2026-01-15', 'novo-preview', 'gratis:free', 'antigo', 'sem-preco']
     for (const text of ['oi', 'corrija este teste', 'refatore tudo']) {

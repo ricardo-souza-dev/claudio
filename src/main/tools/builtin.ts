@@ -263,7 +263,7 @@ export function workspaceTools(root: string): Tool[] {
     },
     {
       name: 'read_file',
-      description: `Read a text file in the working folder. Returns up to ${MAX_READ_LINES} lines; use offset and limit for more.`,
+      description: `Read a text file in the working folder. Returns up to ${DEFAULT_READ_LINES} lines by default, or ${MAX_READ_LINES} when limit is provided; use offset and limit for more.`,
       schema: {
         type: 'object',
         properties: {
@@ -281,7 +281,8 @@ export function workspaceTools(root: string): Tool[] {
         if (buffer.subarray(0, 8000).includes(0)) throw new ToolFailure('Arquivo binário: não é possível ler como texto.')
         const lines = buffer.toString('utf8').split(/\r?\n/)
         const offset = Math.max(1, Number(input.offset) || 1)
-        const limit = Math.min(MAX_READ_LINES, Number(input.limit) || MAX_READ_LINES)
+        const wanted = input.limit === undefined ? DEFAULT_READ_LINES : Number(input.limit)
+        const limit = Math.min(MAX_READ_LINES, wanted || DEFAULT_READ_LINES)
         const slice = lines.slice(offset - 1, offset - 1 + limit)
         const footer = offset - 1 + limit < lines.length ? `\n[Mostrando linhas ${offset}-${offset + slice.length - 1} de ${lines.length}]` : ''
         return { content: clip(slice.join('\n') + footer) }

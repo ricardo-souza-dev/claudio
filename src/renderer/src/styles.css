@@ -2940,6 +2940,29 @@ button.chip:hover {
   display: block;
   margin-bottom: 10px;
 }
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--bg-sunken);
+}
+.check-row input {
+  margin-top: 2px;
+}
+.check-row span {
+  display: grid;
+  gap: 3px;
+}
+.check-row strong {
+  font-size: 13px;
+}
+.check-row small {
+  color: var(--ink-2);
+}
 .field > span {
   display: flex;
   align-items: baseline;

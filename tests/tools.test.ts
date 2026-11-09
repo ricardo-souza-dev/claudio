@@ -59,6 +59,17 @@ describe('pasta de trabalho', () => {
     expect(await readFile(path.join(root, 'a/b.txt'), 'utf8')).toBe('um\n$& literal\ntrês')
   })
 
+  it('keeps read results short unless the model asks for more', async () => {
+    await writeFile(path.join(root, 'long.txt'), Array.from({ length: 600 }, (_, index) => `linha ${index + 1}`).join('\n'))
+    const defaultRead = await tool('read_file').run({ path: 'long.txt' }, signal)
+    expect(defaultRead.content).toContain('linha 400')
+    expect(defaultRead.content).not.toContain('linha 401')
+    expect(defaultRead.content).toContain('[Mostrando linhas 1-400 de 600]')
+
+    const explicitRead = await tool('read_file').run({ path: 'long.txt', limit: 450 }, signal)
+    expect(explicitRead.content).toContain('linha 450')
+  })
+
   it('requires an unambiguous match to edit', async () => {
     await writeFile(path.join(root, 'r.txt'), 'x x')
     const ambiguous = await tool('edit_file').run({ path: 'r.txt', old_string: 'x', new_string: 'y' }, signal)
@@ -82,6 +93,14 @@ describe('pasta de trabalho', () => {
     const scoped = await tool('search').run({ pattern: 'chave', glob: 'src/**/*.ts' }, signal)
     expect(scoped.content).toContain('a.ts')
     expect(scoped.content).not.toContain('b.md')
+  })
+
+  it('limits broad searches to protect the context', async () => {
+    await mkdir(path.join(root, 'src'))
+    await writeFile(path.join(root, 'src/many.txt'), Array.from({ length: 80 }, (_, index) => `hit ${index + 1}`).join('\n'))
+    const found = await tool('search').run({ pattern: 'hit', path: 'src' }, signal)
+    expect(found.content.split('\n').filter((line) => line.startsWith('src/many.txt:')).length).toBe(50)
+    expect(found.content).toContain('[Limite de 50 resultados atingido]')
   })
 
   it('reports a missing file without throwing', async () => {
@@ -452,6 +471,9 @@ describe('armazenamento', () => {
     await store.load()
     expect(store.prefs().theme).toBe('system')
     expect(store.prefs().memory).toBe('old memory')
+    expect(store.prefs().autoModel).toBe(true)
+    expect(store.prefs().economyMode).toBe(true)
+    expect(store.prefs().warnCostUsd).toBe(1)
     await store.setPrefs({ theme: 'dark' })
     const reopened = new SettingsStore(root, vault, {})
     await reopened.load()
