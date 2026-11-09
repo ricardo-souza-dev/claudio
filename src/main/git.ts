@@ -395,7 +395,9 @@ export class GitService {
   async searchFiles(directory = ''): Promise<string[]> {
     const files: string[] = []
     for (const entry of await this.listDirectory(directory)) {
-      if (entry.endsWith('/')) files.push(...await this.searchFiles(entry.slice(0, -1)))
+      if (entry.endsWith('/')) {
+        for (const file of await this.searchFiles(entry.slice(0, -1))) files.push(file)
+      }
       else files.push(entry)
     }
     return files
