@@ -2033,7 +2033,6 @@ button.chip:hover {
   max-width: 280px;
   padding: 2px 6px;
   border-radius: 4px;
-  font: 400 12px var(--mono);
 }
 .model-chip:hover {
   background: var(--bg-hover);
@@ -2060,6 +2059,22 @@ button.chip:hover {
   justify-content: flex-end;
   gap: 2px 6px;
   margin-top: 5px;
+  padding-inline: 6px;
+}
+
+/* Shared metrics keep text and icons centered, without inline baseline gaps. */
+.composer-status .model-chip,
+.composer-status .status-select,
+.composer-status .permission-trigger,
+.composer-status .meter-button {
+  height: 28px;
+  box-sizing: border-box;
+  font: 400 12px/18px var(--sans);
+}
+.composer-status .permission-picker,
+.composer-status .meter {
+  display: flex;
+  align-items: center;
 }
 
 .status-select {

@@ -143,6 +143,35 @@ test('provider pickers curate OpenAI and Anthropic without restricting custom pr
   }
 })
 
+test('composer status controls share height and vertical alignment', async () => {
+  const { app, page } = await launch()
+  await openProject(app, page)
+  for (const model of ['chat-mock', 'gpt-mock']) {
+    await pickModel(page, model)
+    for (const width of [1240, 760, 640]) {
+      await page.setViewportSize({ width, height: 820 })
+      await page.evaluate(() => document.fonts.ready)
+      const controls = page.locator('.composer-status .model-chip, .composer-status .status-select, .composer-status .permission-trigger, .composer-status .meter-button')
+      const metrics = await controls.evaluateAll((nodes) => nodes.map((node) => {
+        const box = node.getBoundingClientRect()
+        const style = getComputedStyle(node)
+        return { height: box.height, center: box.top + box.height / 2, font: style.font, left: box.left, right: box.right }
+      }))
+      expect(metrics.length).toBe(model === 'chat-mock' ? 3 : 4)
+      for (const metric of metrics) {
+        expect(metric.height).toBe(28)
+        expect(Math.abs(metric.center - metrics[0].center)).toBeLessThanOrEqual(1)
+        expect(metric.font).toBe(metrics[0].font)
+        expect(metric.left).toBeGreaterThanOrEqual(0)
+        expect(metric.right).toBeLessThanOrEqual(width)
+      }
+      const box = await page.locator('.composer-box').boundingBox()
+      expect(metrics.at(-1)!.right).toBeCloseTo(box!.x + box!.width - 6, 0)
+    }
+  }
+  await app.close()
+})
+
 test('collapsed project headings stay compact', async () => {
   const { app, page } = await launch()
   await openProject(app, page)
