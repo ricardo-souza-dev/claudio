@@ -144,6 +144,7 @@ test('provider pickers curate OpenAI and Anthropic without restricting custom pr
 })
 
 test('composer status controls share height and vertical alignment', async () => {
+  await seedProviders()
   const { app, page } = await launch()
   await openProject(app, page)
   for (const model of ['chat-mock', 'gpt-mock']) {
@@ -543,7 +544,7 @@ test('permission modes: menu, persistence, bypass warning and approved planning'
   const mode = () => page.getByRole('button', { name: /^Modo:/ })
   await expect(mode()).toHaveText('Manual')
   await expect(mode().locator('svg')).toHaveCount(0)
-  await expect(mode()).toHaveCSS('font-size', '14px')
+  await expect(mode()).toHaveCSS('font-size', '12px')
   await mode().click()
   await expect(page.getByRole('menu', { name: 'Modo', exact: true })).toBeVisible()
   for (const theme of ['light', 'dark']) {
