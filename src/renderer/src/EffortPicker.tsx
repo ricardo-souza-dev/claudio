@@ -8,7 +8,7 @@ export function EffortPicker({ value, levels, onChange }: { value: Effort | null
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const options: { value: Effort | null; label: string }[] = [
-    { value: null, label: 'Força padrão' },
+    { value: null, label: 'Padrão' },
     ...levels.map((level) => ({ value: level, label: EFFORT_LABELS[level] }))
   ]
   const close = () => setOpen(false)
@@ -42,7 +42,7 @@ export function EffortPicker({ value, levels, onChange }: { value: Effort | null
             requestAnimationFrame(() => root.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus())
           }
         }}>
-        {value ? EFFORT_LABELS[value] : 'Força padrão'} <ChevronDown size={13} aria-hidden />
+        {value ? EFFORT_LABELS[value] : 'Padrão'} <ChevronDown size={13} aria-hidden />
       </button>
       {open && <div className="effort-menu" role="menu" aria-label="Força do modelo">
         {options.map((option) => <button key={option.value ?? 'default'} type="button" role="menuitemradio" aria-checked={value === option.value} onClick={() => choose(option.value)}>

@@ -1161,7 +1161,7 @@ test('while working: context, tokens, strength of the model, task list and queue
   // The strength of the model reaches the provider.
   await page.getByRole('button', { name: 'Força do modelo' }).click()
   const effortMenu = page.getByRole('menu', { name: 'Força do modelo' })
-  await expect(effortMenu.getByRole('menuitemradio', { name: 'Força padrão' })).toHaveAttribute('aria-checked', 'true')
+  await expect(effortMenu.getByRole('menuitemradio', { name: 'Padrão' })).toHaveAttribute('aria-checked', 'true')
   await effortMenu.getByRole('menuitemradio', { name: 'Extra' }).click()
   await expect(page.getByRole('button', { name: 'Força do modelo' })).toContainText('Extra')
   await page.getByRole('button', { name: 'Força do modelo' }).press('ArrowDown')
