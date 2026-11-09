@@ -97,7 +97,7 @@ export function LivePanel({ thread, live, running, approvals, queue, onContinue,
             {showPlan && ' Tarefas não concluídas foram mantidas.'}
           </div>
           <button className="button continue-button" disabled={!onContinue} onClick={onContinue} title="Enviar “Continue de onde parou.” com o modelo selecionado">
-            <Play size={12} aria-hidden /> Continuar
+            <Play size={12} aria-hidden /> <span>Continuar</span>
           </button>
         </div>
       )}

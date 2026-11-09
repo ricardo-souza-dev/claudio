@@ -2329,6 +2329,10 @@ button.chip:hover {
   padding: 4px 8px;
   font-size: 12px;
 }
+.continue-button svg {
+  flex: none;
+  transform: translateY(-1px);
+}
 .plan-status {
   flex: 1;
   min-width: 180px;

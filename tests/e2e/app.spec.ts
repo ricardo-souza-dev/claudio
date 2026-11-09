@@ -1199,6 +1199,12 @@ test('while working: context, tokens, strength of the model, task list and queue
   await expect(page.locator('.plan-status')).toContainText('Nenhuma execução em andamento.')
   await shot(page, '21-tarefas')
   await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toBeEnabled()
+  const continueAlignment = await page.locator('.continue-button').evaluate((button) => {
+    const icon = button.querySelector('svg')!.getBoundingClientRect()
+    const label = button.querySelector('span')!.getBoundingClientRect()
+    return Math.abs((icon.top + icon.height / 2) - (label.top + label.height / 2))
+  })
+  expect(continueAlignment).toBeLessThanOrEqual(1.5)
   const pausedTitle = await page.locator('.topbar-title').innerText()
   await page.keyboard.press('Control+n')
   await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toHaveCount(0)
