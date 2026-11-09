@@ -17,6 +17,7 @@ test.beforeAll(async () => {
       '/experience.js': ['site/experience.js', 'text/javascript'],
       '/favicon.svg': ['site/favicon.svg', 'image/svg+xml'],
       '/social.png': ['site/social.png', 'image/png'],
+      '/app-screenshot.png': ['site/app-screenshot.png', 'image/png'],
       '/fonts/sans-regular.woff2': ['site/fonts/sans-regular.woff2', 'font/woff2'],
       '/fonts/sans-medium.woff2': ['site/fonts/sans-medium.woff2', 'font/woff2'],
       '/fonts/sans-semibold.woff2': ['site/fonts/sans-semibold.woff2', 'font/woff2'],
@@ -51,6 +52,10 @@ test('website: release download, mobile layout and unavailable release', async (
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Troque o modelo.Não a conversa.')
     await expect(page.locator('#download')).toBeVisible()
     await expect(page.locator('#download')).toHaveAttribute('href', /github.com\/ricardo-souza-dev\/claudio\/releases\/download\//)
+    const screenshot = page.getByRole('img', { name: /Interface do Claudio em tema escuro/ })
+    await expect(screenshot).toBeVisible()
+    await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth === 1400 && image.naturalHeight === 820)).toBe(true)
+    await expect(page.getByText('INTERFACE REAL · DADOS FICTÍCIOS', { exact: true })).toBeVisible()
     await page.evaluate(() => document.fonts.ready)
     expect(await page.evaluate(() => document.fonts.check('400 16px Plex') && document.fonts.check('500 16px Plex'))).toBe(true)
     await expect(page.getByRole('tab', { name: '01 Abra seu projeto' })).toHaveAttribute('aria-selected', 'true')
@@ -78,6 +83,10 @@ test('website: release download, mobile layout and unavailable release', async (
         overflowing: Array.from(document.querySelectorAll('body *')).filter((element) => element.getBoundingClientRect().right > window.innerWidth + 1).map((element) => element.className)
       }))
       expect(layout.fits, `no horizontal overflow at ${width}px: ${layout.overflowing.join(', ')}`).toBe(true)
+      const bounds = await screenshot.boundingBox()
+      expect(bounds).not.toBeNull()
+      expect(bounds!.width).toBeLessThanOrEqual(width)
+      expect(bounds!.width / bounds!.height).toBeCloseTo(1400 / 820, 2)
     }
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('tab', { name: '02 Construa o contexto' }).click()

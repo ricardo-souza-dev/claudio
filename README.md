@@ -19,7 +19,7 @@ Toda conversa parte de uma pasta no seu computador, para que qualquer modelo tra
 
 ## Downloads e atualizações
 
-O site de apresentação fica em `site/`. Para visualizar: `npm run site:dev`.
+O site de apresentação fica em `site/`. Para visualizar: `npm run site:dev`. A captura da interface usa apenas dados fictícios; para atualizá-la com o app atual, rode `npm run site:screenshot` (o script cria e remove um perfil e um projeto temporários, sem usar suas conversas ou chaves).
 
 O instalador para Windows x64 é gerado com `npm run dist:win`, em `dist/`. A distribuição é uma versão de testes; um download público só existe depois de publicar uma release no GitHub. macOS e Linux ainda não estão disponíveis.
 

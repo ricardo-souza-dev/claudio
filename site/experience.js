@@ -1,4 +1,4 @@
-// A deliberately illustrative walkthrough, not a recording of an API response.
+// The app screenshot uses fictional data; these tabs explain the workflow, not live API activity.
 const descriptions = [
   'Tudo começa na sua pasta. O projeto é o ponto de partida para qualquer modelo.',
   'Arquivos lidos e ferramentas usadas fazem parte do histórico. O contexto acompanha o trabalho.',
