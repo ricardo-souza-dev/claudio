@@ -468,7 +468,8 @@ describe('interrupções e falhas', () => {
     const h = harness('allow')
     const thread = newThread()
     h.onApproval = () => { setTimeout(() => h.runner.stop(thread.id), delay) }
-    await h.runner.send(thread, agent(thread, 'ferramenta: run_command {"command":"node -e \\\"setTimeout(() => {}, 60000)\\\""}', CLAUDE))
+    const command = process.platform === 'win32' ? 'Start-Sleep -Seconds 60' : 'sleep 60'
+    await h.runner.send(thread, agent(thread, `ferramenta: run_command ${JSON.stringify({ command })}`, CLAUDE))
     expect(thread.lastRun).toBe('aborted')
     expect(h.runner.hasActiveRuns).toBe(false)
     expect(lastAssistant(thread).stop).toBe('tool_use')
