@@ -14,7 +14,7 @@ interface ModelPickerProps {
   /** The message being written and the conversation so far, which the estimates are for. */
   task: TaskInfo
   /** Present when Claudio may choose the model by itself, for each message. */
-  auto?: { on: boolean; economy: boolean; onSelect(): void }
+  auto?: { on: boolean; profile: 'economy' | 'balanced' | 'performance'; onSelect(): void }
   onSelect(model: ModelRef): void
   onRefresh(): void
   onClose(): void
@@ -80,10 +80,10 @@ export function ModelPicker({ listing, loading, title, current, inConversation, 
   const currentKey = current ? modelKey(current) : null
 
   const recommendation = useMemo(() => {
-    const choice = chooseAutoModel(listing.models, task, inConversation, { economy: auto?.economy })
+    const choice = chooseAutoModel(listing.models, task, inConversation, { profile: auto?.profile })
     const model = choice && listing.models.find((entry) => modelKey(entry) === modelKey(choice.model))
     return choice && model ? { model, reason: choice.reason } : null
-  }, [listing.models, task, inConversation, auto?.economy])
+  }, [listing.models, task, inConversation, auto?.profile])
 
   useEffect(() => setCursor(0), [query])
   useEffect(() => {

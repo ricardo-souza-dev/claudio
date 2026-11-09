@@ -231,7 +231,7 @@ export function App() {
     let note: string | undefined
     if (prefs.autoModel && (text.trim() || attachments.length > 0)) {
       const hasImages = attachments.some((file) => file.mediaType.startsWith('image/'))
-      const choice = chooseAutoModel(listing.models, taskFrom(thread.messages, listing.models, text, hasImages), inConversation, { economy: prefs.economyMode })
+      const choice = chooseAutoModel(listing.models, taskFrom(thread.messages, listing.models, text, hasImages), inConversation, { profile: prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced') })
       if (choice) {
         target = choice.model
         note = choice.note
@@ -249,9 +249,9 @@ export function App() {
       const ok = window.confirm(`Esta mensagem está estimada em US$ ${estimate.toFixed(2)} com ${label}.\n\nEnviar mesmo assim?`)
       if (!ok) return
     }
-    const effort: Effort | null = prefs.economyMode ? (prefs.effort ?? 'low') : prefs.effort
+    const effort: Effort | null = prefs.effort
     const costNote = estimate !== null ? ` Estimativa desta mensagem: US$ ${estimate.toFixed(2)}.` : ''
-    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, compactResponse: prefs.economyMode, note: `${note ?? ''}${costNote}`.trim() || undefined, attachments })
+    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, compactResponse: prefs.autoModel && (prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced')) === 'economy', note: `${note ?? ''}${costNote}`.trim() || undefined, attachments })
   }
   sendRef.current = send
 
@@ -284,7 +284,7 @@ export function App() {
   }
 
   // Under "Automático", this asks for the model it would pick for an ordinary piece of work.
-  const commitRef = prefs.autoModel ? (chooseAutoModel(listing.models, { text: 'revise estas alterações' }, null, { economy: prefs.economyMode })?.model ?? model) : model
+  const commitRef = prefs.autoModel ? (chooseAutoModel(listing.models, { text: 'revise estas alterações' }, null, { profile: prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced') })?.model ?? model) : model
   const commitModel = commitRef ? { ref: commitRef, label: modelLabel(commitRef, listing.models) } : null
 
   const folderLocked = thread.system !== null
@@ -496,6 +496,8 @@ export function App() {
               model={thread.model ?? (prefs.autoModel ? null : model)}
               autoModel={prefs.autoModel}
               models={listing.models}
+              profile={prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced')}
+              onProfileChange={(performanceProfile) => void store.setPrefs({ performanceProfile, economyMode: performanceProfile === 'economy' })}
               effort={prefs.effort}
               permission={prefs.permissionMode}
               running={running}
@@ -527,7 +529,7 @@ export function App() {
           current={model}
           inConversation={inConversation}
           task={taskFrom(thread.messages, listing.models, pickerDraft.text, pickerDraft.hasImages)}
-          auto={{ on: prefs.autoModel, economy: prefs.economyMode, onSelect: () => void store.setPrefs({ autoModel: true }) }}
+          auto={{ on: prefs.autoModel, profile: prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced'), onSelect: () => void store.setPrefs({ autoModel: true }) }}
           onSelect={chooseModel}
           onRefresh={() => void store.refreshModels(true)}
           onClose={() => {

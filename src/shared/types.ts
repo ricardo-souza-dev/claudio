@@ -391,6 +391,7 @@ export interface Preferences {
   autoModel: boolean
   /** Prefer lower-cost model choices and low effort unless the user overrides it. */
   economyMode: boolean
+  performanceProfile?: 'economy' | 'balanced' | 'performance'
   /** Ask before starting a turn whose estimated cost reaches this value. */
   warnCostUsd: number
 }

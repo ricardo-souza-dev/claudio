@@ -1,7 +1,9 @@
 import { ArrowUp, ChevronDown, FileText, Paperclip, Square, X } from 'lucide-react'
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react'
 import { EFFORT_LEVELS, modelKey, type Effort, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode } from '../../shared/types'
-import { EFFORT_LABELS, formatFileSize, modelLabel } from './format'
+import { formatFileSize, modelLabel } from './format'
+import { EffortPicker } from './EffortPicker'
+import { ProfilePicker } from './ProfilePicker'
 import { PermissionPicker } from './PermissionPicker'
 
 export interface ComposerHandle {
@@ -32,6 +34,8 @@ interface ComposerProps {
   model: ModelRef | null
   autoModel: boolean
   models: ModelInfo[]
+  profile: 'economy' | 'balanced' | 'performance'
+  onProfileChange(profile: 'economy' | 'balanced' | 'performance'): void
   effort: Effort | null
   permission: PermissionMode
   running: boolean
@@ -213,21 +217,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <ChevronDown size={13} aria-hidden />
         </button>
 
+        <ProfilePicker value={props.profile} onChange={props.onProfileChange} />
+
         {efforts.length > 0 && (
-          <select
-            className="status-select"
-            aria-label="Força do modelo"
-            title="Força do modelo: mais força costuma dar mais qualidade, com mais tempo e custo"
-            value={effort ?? ''}
-            onChange={(event) => props.onEffortChange((event.target.value || null) as Effort | null)}
-          >
-            <option value="">Força padrão</option>
-            {efforts.map((level) => (
-              <option key={level} value={level}>
-                {EFFORT_LABELS[level]}
-              </option>
-            ))}
-          </select>
+          <EffortPicker value={effort} levels={efforts} onChange={props.onEffortChange} />
         )}
 
         {hasTools && (

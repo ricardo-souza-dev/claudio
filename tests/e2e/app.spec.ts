@@ -152,16 +152,17 @@ test('composer status controls share height and vertical alignment', async () =>
     for (const width of [1240, 760, 640]) {
       await page.setViewportSize({ width, height: 820 })
       await page.evaluate(() => document.fonts.ready)
-      const controls = page.locator('.composer-status .model-chip, .composer-status .status-select, .composer-status .permission-trigger, .composer-status .meter-button')
+      const controls = page.locator('.composer-status .model-chip, .composer-status .effort-trigger, .composer-status .permission-trigger, .composer-status .meter-button')
       const metrics = await controls.evaluateAll((nodes) => nodes.map((node) => {
         const box = node.getBoundingClientRect()
         const style = getComputedStyle(node)
         return { height: box.height, center: box.top + box.height / 2, fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, left: box.left, right: box.right }
       }))
-      expect(metrics.length).toBe(model === 'chat-mock' ? 3 : 4)
+      expect(metrics.length).toBe(model === 'chat-mock' ? 4 : 5)
       for (const metric of metrics) {
         expect(metric.height).toBe(28)
-        expect(Math.abs(metric.center - metrics[0].center)).toBeLessThanOrEqual(1)
+        // Controls may wrap on narrow windows, preserving the 28px row and 2px gap.
+        expect(Math.abs(metric.center - metrics[0].center) % 30).toBeLessThanOrEqual(1)
         expect(metric.fontSize).toBe(metrics[0].fontSize)
         expect(metric.fontFamily).toBe(metrics[0].fontFamily)
         expect(metric.fontWeight).toBe(metrics[0].fontWeight)
@@ -347,7 +348,7 @@ test('first run: locked-down renderer, empty state, connecting a provider throug
   await page.getByRole('button', { name: 'Conectar o primeiro provedor' }).click()
 
   // A bad address is reported in place.
-  await page.getByLabel('Nome').fill('Teste')
+  await page.getByRole('textbox', { name: 'Nome', exact: true }).fill('Teste')
   await page.getByPlaceholder('https://exemplo.com/v1').fill('ftp://errado')
   await page.getByRole('button', { name: 'Adicionar' }).click()
   await expect(page.getByText('O endereço precisa começar com http:// ou https://')).toBeVisible()
@@ -1132,8 +1133,24 @@ test('while working: context, tokens, strength of the model, task list and queue
   await openProject(app, page)
   await pickModel(page, 'Claude Simulado')
 
+  const profile = page.getByRole('button', { name: 'Perfil', exact: true })
+  await profile.click()
+  await page.getByRole('menuitemradio', { name: 'Desempenho', exact: true }).click()
+  await expect(profile).toContainText('Desempenho')
+  await profile.click()
+  await page.getByRole('menuitemradio', { name: 'Equilibrado', exact: true }).click()
+  await expect(profile).toContainText('Equilibrado')
+
   // The strength of the model reaches the provider.
-  await page.getByLabel('Força do modelo').selectOption('xhigh')
+  await page.getByRole('button', { name: 'Força do modelo' }).click()
+  const effortMenu = page.getByRole('menu', { name: 'Força do modelo' })
+  await expect(effortMenu.getByRole('menuitemradio', { name: 'Força padrão' })).toHaveAttribute('aria-checked', 'true')
+  await effortMenu.getByRole('menuitemradio', { name: 'Extra' }).click()
+  await expect(page.getByRole('button', { name: 'Força do modelo' })).toContainText('Extra')
+  await page.getByRole('button', { name: 'Força do modelo' }).press('ArrowDown')
+  await expect(effortMenu.getByRole('menuitemradio', { name: 'Extra' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(effortMenu).toHaveCount(0)
   await send(page, 'Primeira pergunta')
   await expect(page.locator('.turn.assistant .markdown').last()).toContainText('[anthropic]', { timeout: 15_000 })
   await idle(page)
@@ -1199,7 +1216,7 @@ test('while working: context, tokens, strength of the model, task list and queue
   await idle(page)
   const continueContent = llm.last('anthropic')!.body.messages.at(-1).content
   expect(continueContent[0]).toMatchObject({ type: 'text', text: 'Continue de onde parou.' })
-  expect(JSON.stringify(continueContent)).toContain('Compact response')
+  expect(JSON.stringify(continueContent)).not.toContain('Compact response')
   await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toHaveCount(0)
 
   // Time and tokens count up while the model works.

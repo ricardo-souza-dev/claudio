@@ -338,10 +338,10 @@ function CostsTab({ prefs, onPrefs }: Pick<SettingsProps, 'prefs' | 'onPrefs'>) 
       <h2>Custos</h2>
       <p className="lede">Use estes controles para evitar sustos de crédito. As estimativas usam o contexto atual, o preço do catálogo e um tamanho provável de resposta.</p>
       <label className="check-row">
-        <input type="checkbox" checked={prefs.economyMode} onChange={(event) => void onPrefs({ economyMode: event.target.checked })} />
+        <input type="checkbox" checked={(prefs.performanceProfile ?? (prefs.economyMode ? 'economy' : 'balanced')) === 'economy'} onChange={(event) => void onPrefs({ economyMode: event.target.checked, performanceProfile: event.target.checked ? 'economy' : 'balanced' })} />
         <span>
           <strong>Modo econômico</strong>
-          <small>Prefere modelos baratos no Automático e usa força Baixa quando você deixa “Força padrão”.</small>
+          <small>Prefere modelos baratos no Automático. Você também pode escolher o perfil Equilibrado ou Desempenho na conversa, sem alterar a força manual.</small>
         </span>
       </label>
       <label className="field">

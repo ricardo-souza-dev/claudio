@@ -105,6 +105,7 @@ export interface AutoChoice {
 export interface AutoModelOptions {
   /** Spend less aggressively: choose cheaper tiers and allow stepping down for light/normal work. */
   economy?: boolean
+  profile?: 'economy' | 'balanced' | 'performance'
 }
 
 /**
@@ -118,8 +119,12 @@ export function chooseAutoModel(models: ModelInfo[], task: TaskInfo, current: Mo
   const choices = candidates(models, task)
   if (choices.length === 0) return null
   const weight = weighTask(task)
+  const profile = options.profile ?? (options.economy ? 'economy' : 'balanced')
+  const economy = profile === 'economy'
   let chosen = choices[0]
-  if (options.economy) {
+  if (profile === 'performance') {
+    chosen = choices.filter((model) => model.pricing!.output <= HEAVY_OUTPUT_PRICE_CAP).at(-1) ?? choices[0]
+  } else if (economy) {
     if (weight === 'normal') chosen = choices[Math.min(1, choices.length - 1)]
     if (weight === 'heavy') chosen = choices.filter((model) => model.pricing!.output <= HEAVY_OUTPUT_PRICE_CAP / 2).at(-1) ?? choices[0]
   } else {
@@ -133,10 +138,10 @@ export function chooseAutoModel(models: ModelInfo[], task: TaskInfo, current: Mo
     active?.pricing &&
     active.pricing.output >= chosen.pricing!.output &&
     !unfitReason(active, task) &&
-    (!options.economy || weight === 'heavy' || active.pricing.output <= chosen.pricing!.output * 2)
+    (!economy || weight === 'heavy' || active.pricing.output <= chosen.pricing!.output * 2)
   if (canKeepActive) {
     return { model: current!, weight, reason, note: `Automático: mantive ${active.label} (${reason}).` }
   }
-  const suffix = options.economy ? ' em modo econômico' : ''
+  const suffix = economy ? ' em modo econômico' : profile === 'performance' ? ' em modo desempenho' : ''
   return { model: { provider: chosen.provider, id: chosen.id }, weight, reason, note: `Automático${suffix}: escolhi ${chosen.label} (${reason}).` }
 }

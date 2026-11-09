@@ -2068,7 +2068,7 @@ button.chip:hover {
 
 /* Shared metrics keep text and icons centered, without inline baseline gaps. */
 .composer-status .model-chip,
-.composer-status .status-select,
+.composer-status .effort-trigger,
 .composer-status .permission-trigger,
 .composer-status .meter-button {
   height: 28px;
@@ -2081,23 +2081,26 @@ button.chip:hover {
   align-items: center;
 }
 
-.status-select {
-  max-width: 180px;
-  padding: 2px 4px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  font-size: 12px;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.status-select:hover {
-  background: var(--bg-hover);
-}
-.status-select option {
-  background: var(--bg-raised);
+.effort-picker { position: relative; }
+.effort-trigger { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 6px; color: var(--ink-2); }
+.effort-trigger:hover, .effort-trigger[aria-expanded='true'] { background: var(--bg-hover); }
+.effort-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: min(260px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-raised) 97%, var(--ink));
+  box-shadow: var(--shadow);
+  font: 400 13px/18px var(--sans);
   color: var(--ink);
 }
+.effort-menu > button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 30px; padding: 5px 8px; border-radius: 7px; text-align: left; }
+.effort-menu > button:hover, .effort-menu > button:focus-visible { background: var(--bg-hover); }
+.effort-menu > button svg { color: var(--thread); }
 
 .permission-picker {
   position: relative;
