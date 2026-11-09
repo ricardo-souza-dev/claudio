@@ -157,7 +157,7 @@ Para cada versão:
 2. Revise as mudanças, execute as validações e faça o commit.
 3. Crie uma tag que corresponda exatamente à versão: `git tag v0.1.1`.
 4. Envie o commit e a tag ao GitHub, quando estiver pronto para publicar.
-5. O workflow **Instalador Windows** valida tipos, testes e Electron, gera o instalador e envia os arquivos para uma release em **rascunho**.
+5. O workflow **Instalador Windows** valida tipos, testes e Electron e gera o instalador com `--publish never`. Depois, um passo separado cria ou reutiliza um único rascunho e envia somente os arquivos ausentes. Arquivos existentes precisam ter conteúdo idêntico; releases já publicadas ou rascunhos duplicados interrompem o processo sem substituir nada.
 6. Revise a release no GitHub: confirme `.exe`, `.blockmap` e `latest.yml`, escreva as notas e teste os arquivos numa máquina de testes.
 7. Publique a release como versão normal, sem marcar **pre-release**. Só então o site e o app instalado passam a oferecê-la.
 

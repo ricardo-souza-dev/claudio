@@ -28,11 +28,16 @@ jobs:
       - run: npm test
       - run: npm run test:e2e
       - name: Compilar e publicar rascunho
-        run: npm run build && npx electron-builder --win nsis --x64 --publish always
+        run: npm run build && npx electron-builder --win nsis --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+      - name: Criar ou reutilizar um unico rascunho
+        shell: pwsh
+        run: ./scripts/upload-release.ps1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: claudio-windows-x64

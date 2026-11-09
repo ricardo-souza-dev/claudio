@@ -4,6 +4,18 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+it('builds without electron-builder publishing and uploads only through the controlled draft step', async () => {
+  const workflow = await readFile('.github/workflows/release.yml', 'utf8')
+  const uploader = await readFile('scripts/upload-release.ps1', 'utf8')
+  expect(workflow).toContain('electron-builder --win nsis --x64 --publish never')
+  expect(workflow).not.toContain('--publish always')
+  expect(workflow).toContain('run: ./scripts/upload-release.ps1')
+  expect(uploader).toContain('if ($releases.Count -gt 1)')
+  expect(uploader).toContain('if (!$release.draft -or $release.prerelease)')
+  expect(uploader).toContain('if ($existing.Count -eq 1)')
+  expect(uploader).not.toContain('--clobber')
+})
+
 // Exercise the real Windows PowerShell 5.1 parser and control flow, never GitHub or git pushes.
 describe.skipIf(process.platform !== 'win32')('Windows release script', () => {
   let root: string
@@ -106,7 +118,7 @@ describe.skipIf(process.platform !== 'win32')('Windows release script', () => {
     expect(JSON.parse(await readFile(statePath, 'utf8')).published).toBe(true)
   })
 
-  it.each(['dirty', 'branch', 'origin', 'auth', 'remote-tag', 'newer-tag', 'published'])('refuses unsafe preconditions: %s', async (name) => {
+  it.each(['dirty', 'branch', 'origin', 'auth', 'remote-tag', 'newer-tag', 'published', 'duplicate-draft'])('refuses unsafe preconditions: %s', async (name) => {
     await scenario(name)
     const result = run(['-Publish'])
     expect(result.status, result.text).not.toBe(0)

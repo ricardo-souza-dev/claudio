@@ -50,7 +50,8 @@ if (tool === 'git') {
   if (is('auth', 'status')) { if (state.scenario === 'auth') fail(); output('authenticated') }
   else if (is('repo', 'view')) output('ricardo-souza-dev/claudio')
   else if (is('release', 'list')) {
-    if (state.scenario === 'published') output([{ tagName: tag, isDraft: false, isPrerelease: false }])
+    if (state.scenario === 'duplicate-draft') output([{ tagName: tag, isDraft: true, isPrerelease: false }, { tagName: tag, isDraft: true, isPrerelease: false }])
+    else if (state.scenario === 'published') output([{ tagName: tag, isDraft: false, isPrerelease: false }])
     else if (state.scenario === 'newer-during-build' && state.pushed) output([{ tagName: 'v2.0.0', isDraft: false, isPrerelease: false }])
     else if (state.resume) output([{ tagName: 'v1.0.0', isDraft: false, isPrerelease: false }, { tagName: tag, isDraft: true, isPrerelease: false }])
     else output([])

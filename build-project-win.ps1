@@ -133,6 +133,7 @@ try {
         $releasesJson = Read-External gh @('release', 'list', '--repo', $repository, '--limit', '100', '--json', 'tagName,isDraft,isPrerelease')
         $releases = @((ConvertFrom-Json -InputObject $releasesJson))
         $existing = @($releases | Where-Object { $_.tagName -eq $tag })
+        if ($existing.Count -gt 1) { throw "Ha $($existing.Count) releases para $tag. Resolva os rascunhos duplicados no GitHub antes de continuar." }
         if ($existing.Count -gt 0) {
             if (!$existing[0].isDraft) { throw "$tag ja esta publicada. Nao substitua arquivos publicados; crie uma versao maior." }
             if (!$Resume) { throw "Ja existe um rascunho de $tag. Confira-o e use -Resume." }
