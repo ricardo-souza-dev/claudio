@@ -6,7 +6,7 @@ import { api } from './store'
 
 import { Updates } from './Updates'
 
-type Tab = 'providers' | 'mcp' | 'memory' | 'updates'
+type Tab = 'providers' | 'mcp' | 'memory' | 'costs' | 'updates'
 
 interface SettingsProps {
   providers: ProviderView[]
@@ -329,6 +329,45 @@ function McpTab({ mcp, onMcp }: Pick<SettingsProps, 'mcp' | 'onMcp'>) {
   )
 }
 
+function CostsTab({ prefs, onPrefs }: Pick<SettingsProps, 'prefs' | 'onPrefs'>) {
+  const [warn, setWarn] = useState(String(prefs.warnCostUsd))
+  const parsed = Number(warn)
+  const valid = Number.isFinite(parsed) && parsed >= 0
+  return (
+    <>
+      <h2>Custos</h2>
+      <p className="lede">Use estes controles para evitar sustos de crédito. As estimativas usam o contexto atual, o preço do catálogo e um tamanho provável de resposta.</p>
+      <label className="check-row">
+        <input type="checkbox" checked={prefs.economyMode} onChange={(event) => void onPrefs({ economyMode: event.target.checked })} />
+        <span>
+          <strong>Modo econômico</strong>
+          <small>Prefere modelos baratos no Automático e usa força Baixa quando você deixa “Força padrão”.</small>
+        </span>
+      </label>
+      <label className="field">
+        <span>Avisar antes de uma mensagem estimada acima de</span>
+        <input
+          type="number"
+          min="0"
+          step="0.1"
+          value={warn}
+          onChange={(event) => setWarn(event.target.value)}
+          onBlur={() => {
+            if (valid) void onPrefs({ warnCostUsd: parsed })
+          }}
+        />
+      </label>
+      <p className="hint">Use 0 para não avisar. O padrão recomendado é US$ 1 por mensagem.</p>
+      {!valid && <p className="result failed">Informe um valor maior ou igual a zero.</p>}
+      <div className="row-actions">
+        <button className="button" disabled={!valid || parsed === prefs.warnCostUsd} onClick={() => void onPrefs({ warnCostUsd: parsed })}>
+          Salvar limite
+        </button>
+      </div>
+    </>
+  )
+}
+
 function MemoryTab({ prefs, onPrefs }: Pick<SettingsProps, 'prefs' | 'onPrefs'>) {
   const [memory, setMemory] = useState(prefs.memory)
   const [saved, setSaved] = useState(false)
@@ -382,6 +421,7 @@ export function Settings(props: SettingsProps) {
     ['providers', 'Provedores'],
     ['mcp', 'Ferramentas MCP'],
     ['memory', 'Memória'],
+    ['costs', 'Custos'],
     ['updates', 'Atualizações']
   ]
 
@@ -405,6 +445,7 @@ export function Settings(props: SettingsProps) {
           {tab === 'providers' && <ProvidersTab providers={props.providers} models={props.models} errors={props.errors} onProviders={props.onProviders} onClose={onClose} />}
           {tab === 'mcp' && <McpTab mcp={props.mcp} onMcp={props.onMcp} />}
           {tab === 'memory' && <MemoryTab prefs={props.prefs} onPrefs={props.onPrefs} />}
+          {tab === 'costs' && <CostsTab prefs={props.prefs} onPrefs={props.onPrefs} />}
           {tab === 'updates' && <Updates />}
         </div>
       </div>

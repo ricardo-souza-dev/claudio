@@ -55,7 +55,7 @@ export interface AppState {
 
 const INITIAL: AppState = {
   ready: false,
-  prefs: { theme: 'system', memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: false },
+  prefs: { theme: 'system', memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: true, economyMode: true, warnCostUsd: 1 },
   providers: [],
   listing: { models: [], errors: {} },
   loadingModels: false,

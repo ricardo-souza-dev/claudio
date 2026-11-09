@@ -102,6 +102,11 @@ export interface AutoChoice {
   note: string
 }
 
+export interface AutoModelOptions {
+  /** Spend less aggressively: choose cheaper tiers and allow stepping down for light/normal work. */
+  economy?: boolean
+}
+
 /**
  * Picks by the task, the conversation so far and price, using data about the models rather
  * than a fixed list: the cheapest for light work, the middle of the range for normal work,
@@ -109,18 +114,29 @@ export interface AutoChoice {
  * It never steps down within a conversation: switching mid-thread loses the prompt cache,
  * which can cost more than it saves.
  */
-export function chooseAutoModel(models: ModelInfo[], task: TaskInfo, current: ModelRef | null): AutoChoice | null {
-  const options = candidates(models, task)
-  if (options.length === 0) return null
+export function chooseAutoModel(models: ModelInfo[], task: TaskInfo, current: ModelRef | null, options: AutoModelOptions = {}): AutoChoice | null {
+  const choices = candidates(models, task)
+  if (choices.length === 0) return null
   const weight = weighTask(task)
-  let chosen = options[0]
-  if (weight === 'normal') chosen = options[Math.floor((options.length - 1) / 2)]
-  if (weight === 'heavy') chosen = options.filter((model) => model.pricing!.output <= HEAVY_OUTPUT_PRICE_CAP).at(-1) ?? options[0]
+  let chosen = choices[0]
+  if (options.economy) {
+    if (weight === 'normal') chosen = choices[Math.min(1, choices.length - 1)]
+    if (weight === 'heavy') chosen = choices.filter((model) => model.pricing!.output <= HEAVY_OUTPUT_PRICE_CAP / 2).at(-1) ?? choices[0]
+  } else {
+    if (weight === 'normal') chosen = choices[Math.floor((choices.length - 1) / 2)]
+    if (weight === 'heavy') chosen = choices.filter((model) => model.pricing!.output <= HEAVY_OUTPUT_PRICE_CAP).at(-1) ?? choices[0]
+  }
 
   const reason = reasonFor(task, weight)
   const active = current && models.find((model) => modelKey(model) === modelKey(current))
-  if (active?.pricing && active.pricing.output >= chosen.pricing!.output && !unfitReason(active, task)) {
+  const canKeepActive =
+    active?.pricing &&
+    active.pricing.output >= chosen.pricing!.output &&
+    !unfitReason(active, task) &&
+    (!options.economy || weight === 'heavy' || active.pricing.output <= chosen.pricing!.output * 2)
+  if (canKeepActive) {
     return { model: current!, weight, reason, note: `Automático: mantive ${active.label} (${reason}).` }
   }
-  return { model: { provider: chosen.provider, id: chosen.id }, weight, reason, note: `Automático: escolhi ${chosen.label} (${reason}).` }
+  const suffix = options.economy ? ' em modo econômico' : ''
+  return { model: { provider: chosen.provider, id: chosen.id }, weight, reason, note: `Automático${suffix}: escolhi ${chosen.label} (${reason}).` }
 }

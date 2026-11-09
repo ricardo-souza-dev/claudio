@@ -387,6 +387,10 @@ export interface Preferences {
   effort: Effort | null
   /** Let Claudio choose the model for each message. */
   autoModel: boolean
+  /** Prefer lower-cost model choices and low effort unless the user overrides it. */
+  economyMode: boolean
+  /** Ask before starting a turn whose estimated cost reaches this value. */
+  warnCostUsd: number
 }
 
 /** Everything the renderer may ask of the main process. Secrets only ever flow inward. */

@@ -1,7 +1,7 @@
 import { ChevronRight, Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Terminal as TerminalIcon, Trash2, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { chooseAutoModel, type TaskInfo } from '../../shared/auto-model'
-import { modelKey, NEW_THREAD_TITLE, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
+import { chooseAutoModel, estimateTurn, type TaskInfo } from '../../shared/auto-model'
+import { modelKey, NEW_THREAD_TITLE, type Effort, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
 import { summarizeUsage } from '../../shared/usage'
 import { ClaudioIllustration } from './ClaudioIllustration'
 import { Composer, type ComposerHandle } from './Composer'
@@ -219,7 +219,7 @@ export function App() {
     let note: string | undefined
     if (prefs.autoModel && (text.trim() || attachments.length > 0)) {
       const hasImages = attachments.some((file) => file.mediaType.startsWith('image/'))
-      const choice = chooseAutoModel(listing.models, taskFrom(thread.messages, listing.models, text, hasImages), inConversation)
+      const choice = chooseAutoModel(listing.models, taskFrom(thread.messages, listing.models, text, hasImages), inConversation, { economy: prefs.economyMode })
       if (choice) {
         target = choice.model
         note = choice.note
@@ -228,7 +228,18 @@ export function App() {
       }
     }
     if (!target) return
-    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort: prefs.effort, note, attachments })
+    const hasImages = attachments.some((file) => file.mediaType.startsWith('image/'))
+    const task = taskFrom(thread.messages, listing.models, text, hasImages)
+    const targetInfo = listing.models.find((entry) => modelKey(entry) === modelKey(target))
+    const estimate = targetInfo ? estimateTurn(targetInfo, task).cost : null
+    if (estimate !== null && prefs.warnCostUsd > 0 && estimate >= prefs.warnCostUsd) {
+      const label = modelLabel(target, listing.models)
+      const ok = window.confirm(`Esta mensagem está estimada em US$ ${estimate.toFixed(2)} com ${label}.\n\nEnviar mesmo assim?`)
+      if (!ok) return
+    }
+    const effort: Effort | null = prefs.economyMode ? (prefs.effort ?? 'low') : prefs.effort
+    const costNote = estimate !== null ? ` Estimativa desta mensagem: US$ ${estimate.toFixed(2)}.` : ''
+    store.send({ threadId: thread.id, text, model: target, permissionMode: prefs.permissionMode, effort, note: `${note ?? ''}${costNote}`.trim() || undefined, attachments })
   }
   sendRef.current = send
 
@@ -261,7 +272,7 @@ export function App() {
   }
 
   // Under "Automático", this asks for the model it would pick for an ordinary piece of work.
-  const commitRef = prefs.autoModel ? (chooseAutoModel(listing.models, { text: 'revise estas alterações' }, null)?.model ?? model) : model
+  const commitRef = prefs.autoModel ? (chooseAutoModel(listing.models, { text: 'revise estas alterações' }, null, { economy: prefs.economyMode })?.model ?? model) : model
   const commitModel = commitRef ? { ref: commitRef, label: modelLabel(commitRef, listing.models) } : null
 
   const folderLocked = thread.system !== null
@@ -489,7 +500,7 @@ export function App() {
           current={model}
           inConversation={inConversation}
           task={taskFrom(thread.messages, listing.models, pickerDraft.text, pickerDraft.hasImages)}
-          auto={{ on: prefs.autoModel, onSelect: () => void store.setPrefs({ autoModel: true }) }}
+          auto={{ on: prefs.autoModel, economy: prefs.economyMode, onSelect: () => void store.setPrefs({ autoModel: true }) }}
           onSelect={chooseModel}
           onRefresh={() => void store.refreshModels(true)}
           onClose={() => {

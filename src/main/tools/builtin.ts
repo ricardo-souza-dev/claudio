@@ -4,14 +4,15 @@ import path from 'node:path'
 import type { ApprovalPreview } from '../../shared/types'
 import { ASK_TOOL, PLAN_TOOL, type Tool, type ToolResult } from './types'
 
-const MAX_READ_LINES = 2000
-const MAX_OUTPUT_CHARS = 100_000
-const MAX_SEARCH_MATCHES = 200
+const DEFAULT_READ_LINES = 400
+const MAX_READ_LINES = 1000
+const MAX_OUTPUT_CHARS = 30_000
+const MAX_SEARCH_MATCHES = 50
 const MAX_SEARCH_FILE_BYTES = 1_000_000
-const MAX_LIST_ENTRIES = 500
+const MAX_LIST_ENTRIES = 300
 const PREVIEW_CHARS = 20_000
-const COMMAND_HEAD_CHARS = 20_000
-const COMMAND_TAIL_CHARS = 10_000
+const COMMAND_HEAD_CHARS = 8000
+const COMMAND_TAIL_CHARS = 4000
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 600_000
 
