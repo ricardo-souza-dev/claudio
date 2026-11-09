@@ -156,13 +156,15 @@ test('composer status controls share height and vertical alignment', async () =>
       const metrics = await controls.evaluateAll((nodes) => nodes.map((node) => {
         const box = node.getBoundingClientRect()
         const style = getComputedStyle(node)
-        return { height: box.height, center: box.top + box.height / 2, font: style.font, left: box.left, right: box.right }
+        return { height: box.height, center: box.top + box.height / 2, fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, left: box.left, right: box.right }
       }))
       expect(metrics.length).toBe(model === 'chat-mock' ? 3 : 4)
       for (const metric of metrics) {
         expect(metric.height).toBe(28)
         expect(Math.abs(metric.center - metrics[0].center)).toBeLessThanOrEqual(1)
-        expect(metric.font).toBe(metrics[0].font)
+        expect(metric.fontSize).toBe(metrics[0].fontSize)
+        expect(metric.fontFamily).toBe(metrics[0].fontFamily)
+        expect(metric.fontWeight).toBe(metrics[0].fontWeight)
         expect(metric.left).toBeGreaterThanOrEqual(0)
         expect(metric.right).toBeLessThanOrEqual(width)
       }
