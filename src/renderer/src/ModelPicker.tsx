@@ -1,6 +1,6 @@
 import { Check, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { chooseAutoModel, contextFit, contextShortfall, estimateTurn, unfitReason, type TaskInfo } from '../../shared/auto-model'
+import { chooseAutoModel, contextFit, estimateTurn, unfitReason, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, type ModelInfo, type ModelListing, type ModelRef } from '../../shared/types'
 import { EFFORT_LABELS, formatEstimatedSeconds, formatEstimatedUsd, formatTokens } from './format'
 
