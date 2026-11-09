@@ -12,16 +12,20 @@ function textContent(node: ReactNode): string {
 }
 
 function CodeBlock({ children }: { children?: ReactNode }) {
-  const [copied, setCopied] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle')
   const copy = async (): Promise<void> => {
-    await navigator.clipboard.writeText(textContent(children).replace(/\n$/, ''))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    try {
+      await api.system.copyText(textContent(children).replace(/\n$/, ''))
+      setStatus('copied')
+    } catch {
+      setStatus('error')
+    }
+    setTimeout(() => setStatus('idle'), 1500)
   }
   return (
     <div className="code-block">
-      <button className="code-copy" onClick={() => void copy()} aria-label={copied ? 'Copiado' : 'Copiar código'} title="Copiar">
-        {copied ? <Check size={13} /> : <Copy size={13} />}
+      <button className="code-copy" onClick={() => void copy()} aria-label={status === 'copied' ? 'Copiado' : status === 'error' ? 'Não foi possível copiar' : 'Copiar código'} title={status === 'error' ? 'Não foi possível copiar' : status === 'copied' ? 'Copiado' : 'Copiar'}>
+        {status === 'copied' ? <Check size={13} /> : <Copy size={13} />}
       </button>
       <pre>{children}</pre>
     </div>

@@ -50,6 +50,7 @@ const api: UniApi = {
   system: {
     pickFolder: call('system.pickFolder'),
     openExternal: call('system.openExternal'),
+    copyText: call('system.copyText'),
     toolCount: call('system.toolCount')
   },
   on(listener) {

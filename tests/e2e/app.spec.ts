@@ -152,25 +152,32 @@ test('composer status controls share height and vertical alignment', async () =>
     for (const width of [1240, 760, 640]) {
       await page.setViewportSize({ width, height: 820 })
       await page.evaluate(() => document.fonts.ready)
-      const controls = page.locator('.composer-status .model-chip, .composer-status .effort-trigger, .composer-status .permission-trigger, .composer-status .meter-button')
-      const metrics = await controls.evaluateAll((nodes) => nodes.map((node) => {
-        const box = node.getBoundingClientRect()
-        const style = getComputedStyle(node)
-        return { height: box.height, center: box.top + box.height / 2, fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, left: box.left, right: box.right }
-      }))
-      expect(metrics.length).toBe(model === 'chat-mock' ? 4 : 5)
-      for (const metric of metrics) {
-        expect(metric.height).toBe(28)
-        // Controls may wrap on narrow windows, preserving the 28px row and 2px gap.
-        expect(Math.abs(metric.center - metrics[0].center) % 30).toBeLessThanOrEqual(1)
-        expect(metric.fontSize).toBe(metrics[0].fontSize)
-        expect(metric.fontFamily).toBe(metrics[0].fontFamily)
-        expect(metric.fontWeight).toBe(metrics[0].fontWeight)
-        expect(metric.left).toBeGreaterThanOrEqual(0)
-        expect(metric.right).toBeLessThanOrEqual(width)
-      }
-      const box = await page.locator('.composer-box').boundingBox()
-      expect(metrics.at(-1)!.right).toBeCloseTo(box!.x + box!.width - 6, 0)
+      await expect(async () => {
+        // Read one layout snapshot: the project panel can resize the composer after opening.
+        const { metrics, boxRight } = await page.locator('.composer').evaluate((composer) => {
+          const nodes = composer.querySelectorAll('.composer-status .model-chip, .composer-status .effort-trigger, .composer-status .permission-trigger, .composer-status .meter-button')
+          const box = composer.querySelector('.composer-box')!.getBoundingClientRect()
+          const metrics = [...nodes].map((node) => {
+            const rect = node.getBoundingClientRect()
+            const style = getComputedStyle(node)
+            return { height: rect.height, center: rect.top + rect.height / 2, fontSize: style.fontSize, fontFamily: style.fontFamily, fontWeight: style.fontWeight, left: rect.left, right: rect.right }
+          })
+          return { metrics, boxRight: box.right }
+        })
+        expect(metrics.length).toBe(model === 'chat-mock' ? 4 : 5)
+        for (const metric of metrics) {
+          expect(metric.height).toBe(28)
+          // Controls may wrap on narrow windows, preserving the 28px row and 2px gap.
+          const rowOffset = Math.abs(metric.center - metrics[0].center)
+          expect(Math.abs(rowOffset - Math.round(rowOffset / 30) * 30)).toBeLessThanOrEqual(1)
+          expect(metric.fontSize).toBe(metrics[0].fontSize)
+          expect(metric.fontFamily).toBe(metrics[0].fontFamily)
+          expect(metric.fontWeight).toBe(metrics[0].fontWeight)
+          expect(metric.left).toBeGreaterThanOrEqual(0)
+          expect(metric.right).toBeLessThanOrEqual(width)
+        }
+        expect(metrics.at(-1)!.right).toBeCloseTo(boxRight - 6, 0)
+      }).toPass({ timeout: 5000 })
     }
   }
   await app.close()
@@ -423,6 +430,11 @@ test('one thread through four providers, with markdown rendered safely', async (
   await expect(page.locator('.markdown img')).toHaveCount(0)
   await expect(page.locator('.blocked-image')).toContainText('rastreador')
   await expect(page.locator('.markdown table')).toBeVisible()
+  // The copy button uses the Electron clipboard even when web permissions are denied.
+  const copiedCode = page.locator('.code-block').getByRole('button', { name: 'Copiar código' })
+  await copiedCode.click()
+  await expect(page.locator('.code-block').getByRole('button', { name: 'Copiado' })).toBeVisible()
+  expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('const a = 1')
   await shot(page, '03-fio-quatro-modelos')
 
   // Links go to the system browser, not into the app.

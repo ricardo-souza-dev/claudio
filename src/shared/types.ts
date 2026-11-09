@@ -472,6 +472,7 @@ export interface UniApi {
   system: {
     pickFolder(): Promise<string | null>
     openExternal(url: string): Promise<void>
+    copyText(text: string): Promise<void>
     toolCount(workspace: string | null): Promise<number>
   }
   on(listener: (event: UniEvent) => void): () => void

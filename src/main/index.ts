@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { ApprovalDecision, ApprovalRequest, GitAction, ModelRef, Protocol, QuestionAnswer, QuestionRequest, SendRequest, UniEvent } from '../shared/types'
 import { Runner } from './agent/runner'
 import { AttachmentStore } from './attachments'
@@ -330,6 +330,10 @@ async function start(): Promise<void> {
   })
   handle('system.openExternal', async (url: string) => {
     if (/^https?:\/\//i.test(url)) await shell.openExternal(url)
+  })
+  handle('system.copyText', (text: string) => {
+    if (typeof text !== 'string') throw new Error('Texto inválido para copiar.')
+    clipboard.writeText(text)
   })
   handle('system.toolCount', (workspace: string | null) => toolsFor(workspace).length)
 
