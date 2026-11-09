@@ -1,7 +1,7 @@
 {
   "name": "claudio",
   "productName": "Claudio",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "private": true,
   "description": "Uma só conversa, memória e caixa de ferramentas para qualquer modelo de IA.",
   "main": "out/main/index.js",
