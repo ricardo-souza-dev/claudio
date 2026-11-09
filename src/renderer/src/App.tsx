@@ -364,7 +364,10 @@ export function App() {
                       <button
                         className="thread-delete confirming"
                         aria-label={`Confirmar: apagar “${summary.title}” para sempre`}
-                        onBlur={() => setConfirmingDelete(null)}
+                        onBlur={(event) => {
+                          if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) setConfirmingDelete(null)
+                        }}
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
                           setConfirmingDelete(null)
                           void store.removeThread(summary.id, thread.id, model, thread.workspace)

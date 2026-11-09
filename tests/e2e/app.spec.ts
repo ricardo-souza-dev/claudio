@@ -1534,7 +1534,7 @@ test('conversation management: new, switch, delete, shortcuts, narrow window, li
   await titleInput.fill('Não salvar')
   await titleInput.press('Escape')
   await expect(sidebar.locator('.thread-open')).toHaveText('Título personalizado')
-  await renameFirst.click()
+  await sidebar.getByRole('button', { name: 'Renomear “Título personalizado”', exact: true }).click()
   await titleInput.fill('Conversa número um')
   await titleInput.press('Enter')
   await expect(sidebar.locator('.thread-open')).toHaveText('Conversa número um')
