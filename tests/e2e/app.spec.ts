@@ -1251,9 +1251,9 @@ test('automatic model: chooses by task and price, explains itself, and hands bac
   await expect(page.locator('.author').last()).toHaveText('Claude Simulado')
   await idle(page)
 
-  // Stepping down would lose the prompt cache.
+  // In economy mode, a simple follow-up may step down when the expensive model is far costlier.
   await send(page, 'ok')
-  await expect(page.locator('.notice')).toContainText('mantive Claude Simulado', { timeout: 15_000 })
+  await expect(page.locator('.notice')).toContainText('modo econômico: escolhi chat-mock', { timeout: 15_000 })
   await idle(page)
 
   // Picking a model turns it off.

@@ -111,8 +111,8 @@ export interface AutoModelOptions {
  * Picks by the task, the conversation so far and price, using data about the models rather
  * than a fixed list: the cheapest for light work, the middle of the range for normal work,
  * the strongest within the price cap for heavy work. Models that can't take the task are out.
- * It never steps down within a conversation: switching mid-thread loses the prompt cache,
- * which can cost more than it saves.
+ * It normally avoids stepping down within a conversation because switching loses the prompt cache.
+ * Economy mode may still step down for light and normal work when the active model is much costlier.
  */
 export function chooseAutoModel(models: ModelInfo[], task: TaskInfo, current: ModelRef | null, options: AutoModelOptions = {}): AutoChoice | null {
   const choices = candidates(models, task)
