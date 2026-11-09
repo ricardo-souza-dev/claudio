@@ -168,7 +168,7 @@ describe('modelo automático', () => {
     expect(chooseAutoModel(mixed, task('oi', { hasImages: true }), current)?.model.id).toBe('grande')
     expect(chooseAutoModel(mixed, task('oi', { contextTokens: 50_000 }), current)?.model.id).toBe('grande')
     expect(unfitReason(mixed[0], task('oi', { hasImages: true }))).toBe('não lê imagens')
-    expect(unfitReason(mixed[0], task('oi', { contextTokens: 50_000 }))).toBe('contexto não cabe')
+    expect(unfitReason(mixed[0], task('oi', { contextTokens: 50_000 }))).toBe('contexto não cabe (faltam 40001 tokens)')
     expect(unfitReason(mixed[1], task('oi', { hasImages: true, contextTokens: 50_000 }))).toBeNull()
   })
 
@@ -179,8 +179,8 @@ describe('modelo automático', () => {
     // 85k used: over the margin but under the limit, so the fit shows the slack.
     expect(unfitReason(small, task('oi', { contextTokens: 85_000 }))).toBe('contexto não cabe')
     // Past the limit entirely.
-    expect(unfitReason(small, task('oi', { contextTokens: 120_000 }))).toBe('contexto não cabe (faltam 20040 tokens)')
-    expect(contextShortfall(small, task('oi', { contextTokens: 120_000 }))).toBe(20040)
+    expect(unfitReason(small, task('oi', { contextTokens: 120_000 }))).toBe('contexto não cabe (faltam 20001 tokens)')
+    expect(contextShortfall(small, task('oi', { contextTokens: 120_000 }))).toBe(20001)
     expect(contextShortfall(small, task('oi', { contextTokens: 85_000 }))).toBeNull()
   })
 
