@@ -4,3 +4,31 @@ dist/
 test-results/
 playwright-report/
 *.log
+
+# Browser captures may contain private page content.
+.playwright-mcp/
+
+# Local environment and package registry credentials.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.npmrc
+.pypirc
+
+# Private keys and signing certificates.
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# App profiles must never be committed.
+settings.json
+threads/
+attachments/

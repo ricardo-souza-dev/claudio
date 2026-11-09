@@ -1165,7 +1165,9 @@ test('while working: context, tokens, strength of the model, task list and queue
   await page.getByRole('button', { name: 'Continuar', exact: true }).click()
   await expect(page.locator('.user-text').last()).toHaveText('Continue de onde parou.')
   await idle(page)
-  expect(llm.last('anthropic')!.body.messages.at(-1).content).toEqual([{ type: 'text', text: 'Continue de onde parou.' }])
+  const continueContent = llm.last('anthropic')!.body.messages.at(-1).content
+  expect(continueContent[0]).toMatchObject({ type: 'text', text: 'Continue de onde parou.' })
+  expect(JSON.stringify(continueContent)).toContain('Compact response')
   await expect(page.getByRole('button', { name: 'Continuar', exact: true })).toHaveCount(0)
 
   // Time and tokens count up while the model works.
