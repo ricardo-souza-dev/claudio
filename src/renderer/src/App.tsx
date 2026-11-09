@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderOpen, Monitor, Moon, PanelRight, Plus, Settings as SettingsIcon, Sun, Terminal as TerminalIcon, Trash2, Wrench } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, Monitor, Moon, PanelRight, Pencil, Plus, Settings as SettingsIcon, Sun, Terminal as TerminalIcon, Trash2, Wrench } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { chooseAutoModel, estimateTurn, type TaskInfo } from '../../shared/auto-model'
 import { modelKey, NEW_THREAD_TITLE, type Effort, type Message, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode, type ThreadSummary } from '../../shared/types'
@@ -99,6 +99,18 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [toolCount, setToolCount] = useState(0)
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState<{ id: string; value: string } | null>(null)
+  const titleSaving = useRef(false)
+  const saveTitle = async (id: string, value: string) => {
+    if (titleSaving.current) return
+    titleSaving.current = true
+    setEditingTitle(null)
+    try {
+      if (value.trim()) await api.threads.rename(id, value)
+    } finally {
+      titleSaving.current = false
+    }
+  }
   const [projectError, setProjectError] = useState<string | null>(null)
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string | null>>(() => new Set())
   const projectGroupsId = useId()
@@ -329,10 +341,25 @@ export function App() {
                 <div id={groupId} hidden={!open}>
                 {group.threads.map((summary) => (
                   <div key={summary.id} className={`thread-item${summary.id === thread.id ? ' active' : ''}`} onMouseLeave={() => setConfirmingDelete(null)}>
-                    <button className="thread-open" title={summary.title} onClick={() => void store.openThread(summary.id)} aria-current={summary.id === thread.id}>
+                    <button className="thread-open" title={summary.title} onClick={() => void store.openThread(summary.id)} onDoubleClick={() => setEditingTitle({ id: summary.id, value: summary.title })} aria-current={summary.id === thread.id}>
                       {state.running[summary.id] && <span className="node pulse small" aria-hidden />}
                       <span className="thread-title">{summary.title}</span>
                     </button>
+                    {editingTitle?.id === summary.id ? (
+                      <input className="thread-rename-input" aria-label="Título da conversa" maxLength={120} autoFocus
+                        value={editingTitle.value}
+                        onFocus={(event) => event.currentTarget.select()}
+                        onChange={(event) => setEditingTitle({ id: summary.id, value: event.target.value })}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') void saveTitle(summary.id, editingTitle.value)
+                          if (event.key === 'Escape') setEditingTitle(null)
+                        }}
+                        onBlur={() => void saveTitle(summary.id, editingTitle.value)} />
+                    ) : (
+                      <button className="thread-rename" aria-label={`Renomear “${summary.title}”`} title="Renomear" onClick={() => { setConfirmingDelete(null); setEditingTitle({ id: summary.id, value: summary.title }) }}>
+                        <Pencil size={13} aria-hidden />
+                      </button>
+                    )}
                     {confirmingDelete === summary.id ? (
                       <button
                         className="thread-delete confirming"
