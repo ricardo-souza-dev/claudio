@@ -87,11 +87,14 @@ function Diff({ before, after }: { before: string; after: string }) {
 
 function ApprovalCard({ threadId, approval }: { threadId: string; approval: ApprovalRequest }) {
   const { preview } = approval
+  const isPlan = preview.kind === 'plan'
+  const title = isPlan ? 'Aprovar este plano?' : RISK_TITLE[approval.risk]
   const respond = (decision: ApprovalDecision) => void api.chat.respond(threadId, approval.id, decision)
   // Takes no focus when it appears: an Enter meant for the message box must never approve an action.
   return (
-    <div className="approval" role="group" aria-label={RISK_TITLE[approval.risk]}>
-      <div className="approval-title">{RISK_TITLE[approval.risk]}</div>
+    <div className="approval" role="group" aria-label={title}>
+      <div className="approval-title">{title}</div>
+      {preview.kind === 'plan' && <><pre className="approval-code tall">{preview.text}</pre><p>Ao aprovar, edições comuns serão aceitas. Comandos, ferramentas externas e arquivos sensíveis continuam pedindo confirmação.</p></>}
       {preview.kind === 'command' && <pre className="approval-code">{preview.command}</pre>}
       {preview.kind === 'path' && <pre className="approval-code">{preview.path}</pre>}
       {preview.kind === 'json' && <pre className="approval-code">{preview.json}</pre>}
@@ -109,9 +112,9 @@ function ApprovalCard({ threadId, approval }: { threadId: string; approval: Appr
       )}
       <div className="approval-actions">
         <button className="button primary" onClick={() => respond('allow')}>
-          Permitir
+          {isPlan ? 'Aprovar e executar' : 'Permitir'}
         </button>
-        {approval.risk !== 'sensitive' && (
+        {!isPlan && approval.risk !== 'sensitive' && (
           <button className="button" onClick={() => respond('allow-always')}>
             Sempre nesta conversa
           </button>
@@ -333,6 +336,7 @@ const AssistantMessage = memo(function AssistantMessage(props: AssistantProps) {
         </header>
       )}
       {assistantParts(props)}
+      {props.approvals.filter((approval) => approval.preview.kind === 'plan' && approval.callId === message.id).map((approval) => <ApprovalCard key={approval.id} threadId={props.threadId} approval={approval} />)}
       {message.stop === 'aborted' && <div className="turn-note">Interrompido por você.</div>}
       {message.excluded && <div className="turn-note">Esta resposta fica fora do contexto dos próximos modelos.</div>}
     </article>
@@ -388,7 +392,7 @@ export function Transcript({ thread, models, live, running, approvals, questions
     if (message.role === 'user') {
       previousRole = 'user'
       namedInTurn = null
-      const text = message.parts.map((part) => (part.type === 'text' ? part.text : '')).join('')
+      const text = message.parts.map((part) => (part.type === 'text' && !part.appContext ? part.text : '')).join('')
       return (
         <article className="turn user" key={message.id}>
           <span className="node hollow" aria-hidden />
@@ -398,6 +402,7 @@ export function Transcript({ thread, models, live, running, approvals, questions
             </div>
           )}
           {text && <div className="user-text">{text}</div>}
+          {message.parts.some((part) => part.type === 'text' && part.appContext === 'plan') && <div className="turn-note">Modo Plano · investigar e aguardar aprovação antes de executar</div>}
         </article>
       )
     }

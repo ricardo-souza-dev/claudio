@@ -18,6 +18,9 @@ import {
   type StreamEvent
 } from './types'
 
+// Curate selectable versions without inventing availability or API capabilities.
+const SELECTABLE_MODELS = /^claude-(?:sonnet-5-5|haiku-5-5|opus-5-5|fable-5-1|haiku-4-5|sonnet-4-6)(?:-\d{8})?$/
+
 const MAX_OUTPUT = 64000
 const UNKNOWN_MODEL_MAX_OUTPUT = 8192
 const MAX_REISSUES = 2
@@ -196,6 +199,7 @@ export function createAnthropicAdapter(connection: ProviderConnection): Provider
     async listModels(signal) {
       const models: ModelInfo[] = []
       for await (const model of client.models.list({ limit: 1000 }, { signal })) {
+        if (connection.id === 'anthropic' && !SELECTABLE_MODELS.test(model.id)) continue
         const caps = (model as unknown as { capabilities?: Record<string, any> }).capabilities
         const detail = model as unknown as { max_input_tokens?: number; max_tokens?: number }
         models.push({

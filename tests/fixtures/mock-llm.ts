@@ -54,6 +54,8 @@ interface Plan {
 }
 
 function plan(lastUserText: string, hasToolResult: boolean, label: string, contextChars: number): Plan {
+  if (lastUserText.includes('plano-aprovavel')) return { kind: 'text', text: 'Plano: criar plano.txt com o conteúdo aprovado.' }
+  if (lastUserText.startsWith('Plano aprovado.') && !hasToolResult) return { kind: 'tool', text: '', tool: { name: 'write_file', input: { path: 'plano.txt', content: 'aprovado' } } }
   if (hasToolResult) {
     if (lastUserText.includes('plano-interrompivel')) return { kind: 'slow', text: 'Continuando o trabalho planejado. '.repeat(20) }
     return { kind: 'text', text: `[${label}] ferramenta concluída.` }

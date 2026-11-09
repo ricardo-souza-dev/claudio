@@ -224,6 +224,22 @@ describe('comandos', () => {
 })
 
 describe('permissões', () => {
+  it('keeps local automatic rules, bypass protection, and planning restrictions explicit', () => {
+    expect(permissionFor('write', 'auto', false)).toBe('allow')
+    expect(permissionFor('exec', 'auto', false)).toBe('ask')
+    expect(permissionFor('external', 'auto', false)).toBe('ask')
+    for (const risk of ['read', 'write', 'exec', 'external'] as const) {
+      expect(permissionFor(risk, 'bypass', false)).toBe('allow')
+    }
+    expect(permissionFor('sensitive', 'bypass', true)).toBe('ask')
+    for (const risk of ['write', 'exec', 'external'] as const) {
+      expect(permissionFor(risk, 'plan', true)).toBe('deny')
+      expect(permissionFor(risk, 'read-only', true)).toBe('deny')
+    }
+    expect(permissionFor('read', 'plan', false)).toBe('allow')
+    expect(permissionFor('sensitive', 'plan', true)).toBe('ask')
+  })
+
   it('follows the mode', () => {
     expect(permissionFor('read', 'read-only', false)).toBe('allow')
     expect(permissionFor('write', 'ask', false)).toBe('ask')

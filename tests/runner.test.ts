@@ -314,6 +314,70 @@ describe('tarefas em andamento', () => {
 })
 
 describe('segurança das ferramentas', () => {
+  it('executes a plan only after approval without changing the frozen system prompt', async () => {
+    const h = harness()
+    const thread = newThread()
+    thread.system = 'Frozen system prompt'
+    h.onApproval = () => {
+      expect(thread.messages.some((message) => message.role === 'tool')).toBe(false)
+    }
+    await h.runner.send(thread, agent(thread, 'plano-aprovavel', COMPAT, 'plan'))
+    expect(h.approvals).toHaveLength(1)
+    expect(h.approvals[0].preview).toMatchObject({ kind: 'plan' })
+    expect(await import('node:fs/promises').then((fs) => fs.readFile(path.join(workspace, 'plano.txt'), 'utf8'))).toBe('aprovado')
+    expect(thread.system).toBe('Frozen system prompt')
+    expect(thread.allowedTools).toEqual([])
+    expect(errorsOf(h)).toEqual([])
+  })
+
+  it.each(['deny', 'abort'] as const)('does not execute a plan after %s', async (decision) => {
+    const h = harness('deny')
+    const thread = newThread()
+    if (decision === 'abort') h.onApproval = () => h.runner.stop(thread.id)
+    await h.runner.send(thread, agent(thread, 'plano-aprovavel', COMPAT, 'plan'))
+    expect(h.approvals).toHaveLength(1)
+    expect(thread.messages.some((message) => message.role === 'tool')).toBe(false)
+    await expect(import('node:fs/promises').then((fs) => fs.readFile(path.join(workspace, 'plano.txt')))).rejects.toThrow()
+  })
+
+  it('planning blocks mutations even when the tool was previously trusted', async () => {
+    const h = harness('deny')
+    const thread = newThread()
+    thread.allowedTools = ['write_file']
+    await h.runner.send(thread, agent(thread, 'ferramenta: write_file {"path":"never.txt","content":"x"}', COMPAT, 'plan'))
+    expect(thread.messages.find((message) => message.role === 'tool')!.parts[0]).toMatchObject({ denied: true })
+    expect(h.approvals.every((approval) => approval.preview.kind === 'plan')).toBe(true)
+    await expect(import('node:fs/promises').then((fs) => fs.readFile(path.join(workspace, 'never.txt')))).rejects.toThrow()
+  })
+
+  it.each(['plan', 'read-only'] as const)('%s blocks sensitive writes instead of asking for permission to mutate', async (mode) => {
+    await writeFile(path.join(workspace, '.env'), 'SECRET=original')
+    const h = harness('deny')
+    const thread = newThread()
+    thread.allowedTools = ['write_file', 'edit_file']
+    for (const command of [
+      'ferramenta: write_file {"path":".env","content":"overwritten"}',
+      'ferramenta: edit_file {"path":".env","old_string":"original","new_string":"changed"}'
+    ]) {
+      await h.runner.send(thread, agent(thread, command, COMPAT, mode))
+    }
+    expect(h.approvals.every((approval) => approval.preview.kind === 'plan')).toBe(true)
+    expect(await import('node:fs/promises').then((fs) => fs.readFile(path.join(workspace, '.env'), 'utf8'))).toBe('SECRET=original')
+    expect(thread.messages.filter((message) => message.role === 'tool').every((message) => message.parts.every((part) => part.type === 'tool_result' && part.denied))).toBe(true)
+  })
+
+  it.each(['auto', 'bypass'] as const)('%s allows ordinary writes but still asks about secrets', async (mode) => {
+    const h = harness('deny')
+    const thread = newThread()
+    await h.runner.send(thread, agent(thread, 'ferramenta: write_file {"path":"ordinary.txt","content":"ok"}', COMPAT, mode))
+    expect(h.approvals).toHaveLength(0)
+    await writeFile(path.join(workspace, '.env'), 'SECRET=hidden')
+    await h.runner.send(thread, agent(thread, 'ferramenta: read_file {"path":".env"}', COMPAT, mode))
+    expect(h.approvals).toHaveLength(1)
+    expect(h.approvals[0].risk).toBe('sensitive')
+    expect(JSON.stringify(thread.messages)).not.toContain('SECRET=hidden')
+  })
+
   it('asks before writing and honors a denial', async () => {
     const h = harness('deny')
     const thread = newThread()

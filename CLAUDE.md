@@ -87,7 +87,7 @@ Estas decisões não são óbvias lendo o código, e quebrá-las causa falhas s�
 
 ### Provedores
 
-- **Nenhum id de modelo fica no código.** A lista vem da API de cada provedor. O que ela não informa vem do models.dev, com a API sempre tendo prioridade. Sem o catálogo (offline, por exemplo), tudo continua funcionando, só sem limites, preços e escolha automática.
+- **A lista vem da API de cada provedor.** Exceção de curadoria: a integração `openai` só oferece os IDs `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6-sol` e `gpt-5.6` que a API retornar (`OPENAI_SELECTION`). O Luna aparece uma vez e usa o controle separado de força. A integração `anthropic` só oferece Sonnet 5.5, Haiku 5.5, Opus 5.5, Fable 5.1, Haiku 4.5 e Sonnet 4.6: IDs-base e sufixos de data com oito dígitos (`SELECTABLE_MODELS`). Os filtros não afetam provedores personalizados e não impedem a resolução de referências antigas de conversas. O que a API não informa vem do models.dev, com a API sempre tendo prioridade. Sem o catálogo (offline, por exemplo), tudo continua funcionando, só sem limites, preços e escolha automática.
 - **Use os SDKs oficiais** dos três fornecedores. Os construtores fixam `authToken`, `organization` e `vertexai` para que variáveis de ambiente não mudem a conexão nem vazem dados para outro endereço.
 - **Anthropic:** usa `client.beta.messages.stream`, raciocínio adaptativo com `display: "summarized"`, `prefix_mismatch_behavior: "drop_block"` e esforço padrão `high`. O fallback de recusa (`fallbacks: "default"`) só é ligado no endpoint oficial, nos modelos listados em `MODELS_WITH_SERVER_FALLBACK`.
 - **OpenAI oficial:** usa Responses com `store: false`, reenviando os itens de raciocínio criptografados.

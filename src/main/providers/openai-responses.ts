@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import type { ResponseInputContent, ResponseInputItem, ResponseOutputItem } from 'openai/resources/responses/responses'
 import { clampEffort, type AttachmentPart, type Message, type ModelInfo, type Part, type StopReason } from '../../shared/types'
 import { attachmentAsText, contextOf, isImage, isPdf, replayable, safeToolId, textOf, toolResultsOf } from './history'
-import { isTextModel, listOpenAiStyleModels } from './openai-models'
+import { isSelectableOpenAiModel, isTextModel, listOpenAiStyleModels } from './openai-models'
 import {
   AbortedError,
   describeError,
@@ -94,7 +94,8 @@ export function createResponsesAdapter(connection: ProviderConnection): Provider
   })
 
   return {
-    listModels: (signal) => listOpenAiStyleModels(client, connection, isTextModel, signal),
+    // Custom Responses providers keep their own catalogs, even on OpenAI's endpoint.
+    listModels: (signal) => listOpenAiStyleModels(client, connection, connection.id === 'openai' ? isSelectableOpenAiModel : isTextModel, signal),
 
     async stream(request, onEvent): Promise<CompletionResult> {
       const { model, system, messages, tools, signal, replayRaw } = request

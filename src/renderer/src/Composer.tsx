@@ -2,6 +2,7 @@ import { ArrowUp, ChevronDown, FileText, Paperclip, Square, X } from 'lucide-rea
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react'
 import { EFFORT_LEVELS, modelKey, type Effort, type ModelInfo, type ModelRef, type OutgoingAttachment, type PermissionMode } from '../../shared/types'
 import { EFFORT_LABELS, formatFileSize, modelLabel } from './format'
+import { PermissionPicker } from './PermissionPicker'
 
 export interface ComposerHandle {
   focus(): void
@@ -230,11 +231,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
 
         {hasTools && (
-          <select className="status-select" aria-label="Permissões" value={permission} onChange={(event) => props.onPermissionChange(event.target.value as PermissionMode)}>
-            <option value="ask">Perguntar antes de agir</option>
-            <option value="auto-edit">Editar sem perguntar</option>
-            <option value="read-only">Somente leitura</option>
-          </select>
+          <PermissionPicker value={permission} disabled={running} onChange={props.onPermissionChange} />
         )}
 
         {props.meter}

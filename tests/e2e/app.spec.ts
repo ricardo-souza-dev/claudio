@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -82,6 +84,64 @@ async function openProject(app: ElectronApplication, page: Page): Promise<void> 
 }
 
 const idle = (page: Page) => expect(page.getByRole('button', { name: 'Enviar', exact: true })).toBeVisible({ timeout: 20_000 })
+
+test('provider pickers curate OpenAI and Anthropic without restricting custom providers', async () => {
+  await seedProviders()
+  const allowed = ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-5.6']
+  const anthropic = ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-haiku-4-5-20261001', 'claude-sonnet-4-6']
+  const server = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    if (req.url?.startsWith('/anthropic/')) {
+      res.end(JSON.stringify({
+        data: [...anthropic, 'claude-opus-5', 'claude-sonnet-5-5-preview'].map((id) => ({ id, type: 'model', display_name: id, created_at: '2026-10-01T00:00:00Z' })),
+        has_more: false
+      }))
+    } else {
+      res.end(JSON.stringify({ data: [...allowed, 'gpt-other', 'gpt-6-luna-preview'].map((id) => ({ id })) }))
+    }
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    await seedProviders()
+    const settingsPath = path.join(dataDir, 'settings.json')
+    const settings = JSON.parse(await readFile(settingsPath, 'utf8'))
+    // Distinguish custom provider headings from the built-in integrations.
+    settings.custom.find((provider: { id: string }) => provider.id === 'custom-o').name = 'OpenAI personalizado'
+    settings.custom.find((provider: { id: string }) => provider.id === 'custom-a').name = 'Anthropic personalizado'
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    settings.baseUrls.openai = `${url}/v1`
+    settings.baseUrls.anthropic = `${url}/anthropic`
+    await writeFile(settingsPath, JSON.stringify(settings))
+    const { app, page } = await launch()
+    // Save only fake credentials; both providers point at the local test server.
+    await page.evaluate(async () => {
+      await window.uni.providers.setKey('openai', 'fake')
+      await window.uni.providers.setKey('anthropic', 'fake')
+    })
+    await page.keyboard.press('Control+k')
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Atualizar lista de modelos' }).click()
+    await expect(dialog.getByText('gpt-6.1-terra', { exact: true })).toBeVisible()
+    await dialog.getByRole('textbox').fill('OpenAI')
+    await expect(page.locator('.picker-row')).toHaveCount(6)
+    for (const id of [...allowed, 'gpt-mock']) {
+      await expect(page.locator('.picker-row').filter({ hasText: id })).toHaveCount(1)
+    }
+    await expect(page.locator('.picker-row').filter({ hasText: 'gpt-other' })).toHaveCount(0)
+    await expect(page.locator('.picker-row').filter({ hasText: 'preview' })).toHaveCount(0)
+    await dialog.getByRole('textbox').fill('Anthropic')
+    await expect(page.locator('.picker-row')).toHaveCount(7)
+    for (const id of [...anthropic, 'claude-mock']) {
+      await expect(page.locator('.picker-row').filter({ hasText: id })).toHaveCount(1)
+    }
+    await expect(page.locator('.picker-row').filter({ hasText: 'preview' })).toHaveCount(0)
+    await expect(dialog.getByText('claude-opus-5', { exact: true })).toHaveCount(0)
+    await app.close()
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
 
 test('collapsed project headings stay compact', async () => {
   const { app, page } = await launch()
@@ -420,8 +480,10 @@ test('agent: asks before acting, edits files, runs commands, and can be interrup
   expect(llm.last('openai-chat')!.body.messages[0].content).toContain('Sempre escreva testes.')
   await expect(page.locator('.context-chip', { hasText: 'AGENTS.md' })).toBeVisible()
 
-  // Read-only mode refuses without asking.
-  await page.getByLabel('Permissões').selectOption('read-only')
+  // Legacy read-only preferences still refuse without asking, though no longer offered in the composer.
+  await page.evaluate(() => window.uni.prefs.set({ permissionMode: 'read-only' }))
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Modo: Somente leitura', exact: true })).toBeVisible()
   await send(page, 'ferramenta: write_file {"path":"bloqueado.txt","content":"x"}')
   await idle(page)
   await expect(page.getByText('Alterar este arquivo?')).toHaveCount(0)
@@ -440,6 +502,84 @@ test('agent: asks before acting, edits files, runs commands, and can be interrup
   // The folder can't change once the conversation has begun.
   await expect(page.locator('.context-chip.action')).toBeDisabled()
 
+  expect(problems).toEqual([])
+  await app.close()
+})
+
+test('permission modes: menu, persistence, bypass warning and approved planning', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await pickModel(page, 'chat-mock')
+  const mode = () => page.getByRole('button', { name: /^Modo:/ })
+  await expect(mode()).toHaveText('Manual')
+  await mode().click()
+  await expect(page.getByRole('menu', { name: 'Modo', exact: true })).toBeVisible()
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value }, theme)
+    await page.setViewportSize({ width: 760, height: 600 })
+    const bounds = await page.getByRole('menu', { name: 'Modo', exact: true }).boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.y).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(760)
+  }
+  await page.setViewportSize({ width: 1240, height: 820 })
+  await page.getByRole('menuitemradio', { name: /^Automático/ }).click()
+  await expect(mode()).toHaveText('Automático')
+  await send(page, 'ferramenta: write_file {"path":"automatico.txt","content":"ok"}')
+  await idle(page)
+  expect(await readFile(path.join(workspace, 'automatico.txt'), 'utf8')).toBe('ok')
+  await page.reload()
+  await expect(mode()).toHaveText('Automático')
+
+  await mode().click()
+  await page.getByRole('menuitemradio', { name: /^Ignorar permissões/ }).click()
+  await expect(page.getByRole('alertdialog')).toContainText('sem sandbox')
+  await page.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await expect(mode()).toHaveText('Automático')
+  await mode().click()
+  await page.getByRole('menuitemradio', { name: /^Ignorar permissões/ }).click()
+  await page.getByRole('button', { name: 'Ativar mesmo assim', exact: true }).click()
+  await expect(mode()).toHaveText('Ignorar permissões')
+  await send(page, 'ferramenta: run_command {"command":"echo bypass-ok"}')
+  await idle(page)
+  await expect(page.getByText('Executar este comando?')).toHaveCount(0)
+  await writeFile(path.join(workspace, '.env'), 'SECRET=not-for-the-model')
+  await send(page, 'ferramenta: read_file {"path":".env"}')
+  await expect(page.locator('.approval')).toBeVisible({ timeout: 15_000 })
+  await page.locator('.approval').getByRole('button', { name: 'Negar', exact: true }).click()
+  await idle(page)
+  expect(JSON.stringify(llm.requests)).not.toContain('SECRET=not-for-the-model')
+
+  await mode().click()
+  await page.getByRole('menuitemradio', { name: /^Plano/ }).click()
+  await send(page, 'plano-aprovavel')
+  const approval = page.getByRole('group', { name: 'Aprovar este plano?' })
+  await expect(approval).toBeVisible({ timeout: 15_000 })
+  await expect(mode()).toBeDisabled()
+  await expect(approval.getByRole('button', { name: 'Sempre nesta conversa' })).toHaveCount(0)
+  await expect(readFile(path.join(workspace, 'plano.txt'))).rejects.toThrow()
+  await approval.getByRole('button', { name: 'Aprovar e executar' }).click()
+  await idle(page)
+  expect(await readFile(path.join(workspace, 'plano.txt'), 'utf8')).toBe('aprovado')
+  await expect(page.getByText('Modo Plano · investigar e aguardar aprovação antes de executar', { exact: true })).toBeVisible()
+  await rm(path.join(workspace, 'plano.txt'))
+
+  await send(page, 'plano-aprovavel')
+  await expect(approval).toBeVisible({ timeout: 15_000 })
+  await approval.getByRole('button', { name: 'Negar', exact: true }).click()
+  await idle(page)
+  await expect(page.getByText('Plano não aprovado. Não execute alterações.', { exact: true })).toBeVisible()
+  await expect(readFile(path.join(workspace, 'plano.txt'))).rejects.toThrow()
+
+  await mode().click()
+  await page.getByRole('menuitemradio', { name: /^Manual/ }).focus()
+  await page.keyboard.press('3')
+  await expect(mode()).toHaveText('Aceitar edições')
+  await mode().click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu', { name: 'Modo', exact: true })).toHaveCount(0)
   expect(problems).toEqual([])
   await app.close()
 })

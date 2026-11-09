@@ -62,6 +62,8 @@ export interface Usage {
 export type StopReason = 'end' | 'tool_use' | 'length' | 'refusal' | 'aborted' | 'error'
 
 export interface TextPart {
+  /** App-authored mode context; render a localized label, but replay the original text. */
+  appContext?: 'plan'
   type: 'text'
   text: string
 }
@@ -149,7 +151,7 @@ export interface ThreadSummary {
   workspace: string | null
 }
 
-export type PermissionMode = 'ask' | 'auto-edit' | 'read-only'
+export type PermissionMode = 'ask' | 'auto-edit' | 'read-only' | 'auto' | 'plan' | 'bypass'
 export type Risk = 'read' | 'sensitive' | 'write' | 'exec' | 'external'
 export type ApprovalDecision = 'allow' | 'allow-always' | 'deny'
 
@@ -159,6 +161,7 @@ export type ApprovalPreview =
   | { kind: 'write'; path: string; content: string; truncated: boolean }
   | { kind: 'path'; path: string }
   | { kind: 'json'; json: string }
+  | { kind: 'plan'; text: string }
 
 export interface ApprovalRequest {
   id: string

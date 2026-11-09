@@ -133,7 +133,11 @@ export class Runner {
           id: newId('m_'),
           role: 'user',
           // Files first: models read better with what they refer to already in view.
-          parts: [...attachments, ...(text ? [{ type: 'text' as const, text }] : [])],
+          parts: [
+            ...attachments,
+            ...(text ? [{ type: 'text' as const, text }] : []),
+            ...(request.permissionMode === 'plan' ? [{ type: 'text' as const, appContext: 'plan' as const, text: '\n[Claudio mode: Plan. Investigate using read-only tools and present your proposed plan as your final answer. Do not edit files, run commands, or use external tools. The app will ask the user to approve the plan before execution. Do not request approval through ask_user.]' }] : [])
+          ],
           createdAt: Date.now()
         })
       } else if (thread.messages.at(-1)?.role === 'assistant' && !thread.messages.at(-1)?.excluded) {
@@ -305,6 +309,27 @@ export class Runner {
       }
 
       const calls = toolCallsOf(message)
+      if (mode === 'plan' && calls.length === 0 && result.stop !== 'length') {
+        const planText = message.parts.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n').trim()
+        if (!planText || signal.aborted) return
+        const decision = await this.deps.requestApproval(thread.id, {
+          id: newId('a_'), callId: message.id, tool: 'approve_plan', risk: 'write',
+          preview: { kind: 'plan', text: planText }
+        }, signal)
+        if (signal.aborted) return
+        const approved = decision === 'allow' || decision === 'allow-always'
+        thread.messages.push({
+          id: newId('m_'), role: 'user', createdAt: Date.now(),
+          parts: [{ type: 'text', text: approved
+            ? 'Plano aprovado. Execute o plano apresentado. Edições comuns estão autorizadas; comandos, acesso externo e arquivos sensíveis ainda exigem confirmação.'
+            : 'Plano não aprovado. Não execute alterações.' }]
+        })
+        this.publish(thread)
+        await this.deps.save(thread)
+        if (!approved) return
+        mode = 'auto'
+        continue
+      }
       if (calls.length === 0) {
         if (result.stop === 'length') {
           this.deps.emit({ type: 'notice', threadId: thread.id, text: 'A resposta foi cortada pelo limite de tamanho. Peça para continuar.' })
@@ -354,10 +379,17 @@ export class Runner {
     // Asking is itself waiting for the person, so it needs no permission, in any mode.
     if (tool.name === ASK_TOOL && this.deps.askUser) return this.ask(thread.id, call, (input as { questions: Question[] }).questions, signal)
 
+    // Sensitive writes share a risk category with sensitive reads. Planning must
+    // block the operation itself, not just rely on its risk or earlier grants.
+    if ((mode === 'plan' || mode === 'read-only') && !['read_file', 'list_dir', 'search', PLAN_TOOL, ASK_TOOL].includes(tool.name)) {
+      return { ...this.errorResult(call, mode === 'plan'
+        ? 'Bloqueado: apresente um plano e aguarde a aprovação antes de executar ações.'
+        : 'Bloqueado: esta conversa está no modo somente leitura.'), denied: true }
+    }
     const risk = tool.risk(input)
     const permission = permissionFor(risk, mode, thread.allowedTools.includes(tool.name))
     if (permission === 'deny') {
-      return { ...this.errorResult(call, 'Bloqueado: esta conversa está no modo somente leitura.'), denied: true }
+      return { ...this.errorResult(call, mode === 'plan' ? 'Bloqueado: apresente um plano e aguarde a aprovação antes de executar ações.' : 'Bloqueado: esta conversa está no modo somente leitura.'), denied: true }
     }
     if (permission === 'ask') {
       const approval: ApprovalRequest = { id: newId('a_'), callId: call.id, tool: tool.name, risk, preview: tool.preview(input) }

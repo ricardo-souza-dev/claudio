@@ -17,8 +17,8 @@ export interface ProviderDefinition {
 }
 
 /**
- * Providers ship new models weekly, so no model ids live here: each list comes
- * from the provider's own API. Adding a vendor that speaks one of the four
+ * Each list comes from the provider's own API (the built-in OpenAI and Anthropic
+ * integrations additionally curate selectable IDs). Adding a vendor that speaks one of the four
  * protocols is one line, and anyone else can be added as a custom provider.
  */
 export const PROVIDER_CATALOG: ProviderDefinition[] = [

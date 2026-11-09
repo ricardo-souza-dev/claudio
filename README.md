@@ -53,6 +53,20 @@ Atalhos: `Ctrl+K` troca de modelo, `Ctrl+N` abre uma conversa nova, `Enter` envi
 - **Medidor de contexto:** mostra quanto do limite já foi usado. Ao clicar, traz tokens de entrada, saída e cache, além do custo estimado. Limites e preços vêm do [models.dev](https://models.dev) e podem variar.
 - **Execução:** tempo, tokens, lista de tarefas e fila de mensagens ficam sempre à vista.
 
+### Modos de permissão
+
+O menu **Modo**, abaixo da mensagem, oferece:
+
+- **Automático:** usa regras locais; aceita leituras e edições comuns, mas confirma comandos e ferramentas externas. Não usa outro modelo para avaliar ações.
+- **Manual:** pergunta antes de alterar arquivos, executar comandos ou usar ferramentas externas, respeitando autorizações de “Sempre nesta conversa”.
+- **Aceitar edições:** aceita edições comuns automaticamente; comandos e ferramentas externas ainda pedem confirmação.
+- **Plano:** permite investigar com ferramentas de leitura e apresenta um plano. **Aprovar e executar** libera as edições daquela execução; comandos e ferramentas externas seguem as regras do Automático. Negar ou interromper não libera a execução. A próxima mensagem continua no modo Plano.
+- **Ignorar permissões:** exige um aviso de ativação e dispensa confirmações comuns, inclusive de comandos e ferramentas externas. Não oferece sandbox; comandos rodam com suas permissões.
+
+Arquivos sensíveis acessados pelas ferramentas de arquivo continuam pedindo confirmação em todos os modos. O limite da pasta dessas ferramentas também permanece. O modo fica salvo e só pode ser trocado entre execuções. Os atalhos **1–4** funcionam com o menu aberto.
+
+Automático e Aceitar edições têm, nesta versão, as mesmas regras de autorização. Preferências antigas de Somente leitura continuam funcionando, mas esse modo não é oferecido no novo menu.
+
 ## Git
 
 O painel à direita reúne alterações com diff, preparar, descartar, commit, branches, fetch, pull e push, sempre sem forçar nada. Submódulos e outros repositórios dentro da pasta aparecem cada um com seus próprios controles.
@@ -71,13 +85,17 @@ O terminal é operado por você, separado das ferramentas do agente, e executa c
 
 ## Navegador
 
-Em **Ajustes → Ferramentas MCP**, os atalhos de Chrome conectam um servidor de navegador que qualquer modelo com ferramentas pode usar. Cada ação pede confirmação, porque uma página pode tentar dar ordens ao modelo.
+Em **Ajustes → Ferramentas MCP**, os atalhos de Chrome conectam um servidor de navegador que qualquer modelo com ferramentas pode usar. As ações pedem confirmação pelas regras do modo escolhido; Ignorar permissões dispensa essas perguntas. Use com cuidado: uma página pode tentar dar ordens ao modelo.
 
 ## Provedores
 
 Prontos para usar: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Together AI, OpenRouter, Ollama e LM Studio. O OpenRouter, sozinho, dá acesso a centenas de modelos de outros fornecedores.
 
-Qualquer outro serviço que fale um dos quatro protocolos (Anthropic Messages, OpenAI Responses, compatível com OpenAI ou Gemini) pode ser adicionado em **Ajustes**, sem escrever código.
+Na integração OpenAI, o seletor fica restrito a `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6-sol` e `gpt-5.6`, somente quando retornados pela API da sua conta. O Luna aparece uma vez; a força é escolhida no controle separado. Preços e limites continuam vindo da API e do catálogo, sem valores fixos para esses modelos.
+
+Na integração Anthropic, o seletor oferece apenas Sonnet 5.5, Haiku 5.5, Opus 5.5, Fable 5.1, Haiku 4.5 e Sonnet 4.6, quando retornados pela API. São aceitos os IDs-base (`claude-sonnet-5-5`, por exemplo) e os IDs dessas versões com sufixo de data. Força, capacidades e limites continuam seguindo os dados da API e do catálogo.
+
+Qualquer outro serviço que fale um dos quatro protocolos (Anthropic Messages, OpenAI Responses, compatível com OpenAI ou Gemini) pode ser adicionado em **Ajustes**, sem escrever código. Provedores personalizados não recebem os filtros das integrações OpenAI e Anthropic.
 
 ## Segurança
 
