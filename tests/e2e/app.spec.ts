@@ -1444,6 +1444,13 @@ test('choosing a model: recommendation for the moment, with cost, strength and m
   await expect(row.locator('.picker-figure').nth(2)).toHaveText(/^~\d+s$/, { timeout: 10_000 })
   await page.keyboard.press('Escape')
 
+  // Open the picker before the asynchronous file read finishes.
+  await page.evaluate(() => {
+    const original = FileReader.prototype.readAsDataURL
+    FileReader.prototype.readAsDataURL = function (blob: Blob) {
+      setTimeout(() => original.call(this, blob), 1000)
+    }
+  })
   // A model that can't read images says so when there is one to send.
   const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
   await page.getByLabel('Escolher arquivos').setInputFiles({ name: 'print.png', mimeType: 'image/png', buffer: Buffer.from(PNG, 'base64') })

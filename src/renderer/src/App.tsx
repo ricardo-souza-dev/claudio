@@ -507,6 +507,7 @@ export function App() {
               hasTools={toolCount > 0}
               meter={<ContextMeter messages={thread.messages} models={listing.models} model={listing.models.find((entry) => model && modelKey(entry) === modelKey(model))} effort={prefs.effort} />}
               onPickModel={openPicker}
+              onDraftChange={setPickerDraft}
               onEffortChange={(effort) => void store.setPrefs({ effort })}
               onPermissionChange={(next: PermissionMode) => void store.setPrefs({ permissionMode: next })}
               onSend={send}

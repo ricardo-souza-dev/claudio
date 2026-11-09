@@ -42,6 +42,7 @@ interface ComposerProps {
   hasTools: boolean
   meter: ReactNode
   onPickModel(): void
+  onDraftChange(draft: { text: string; hasImages: boolean }): void
   onEffortChange(effort: Effort | null): void
   onPermissionChange(mode: PermissionMode): void
   onSend(text: string, attachments: OutgoingAttachment[]): void
@@ -69,6 +70,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }),
     [text, pending]
   )
+
+  useLayoutEffect(() => {
+    props.onDraftChange({ text, hasImages: pending.some((file) => file.mediaType.startsWith('image/')) })
+  }, [text, pending, props.onDraftChange])
 
   const attach = async (files: File[]): Promise<void> => {
     setAttachProblem(null)
