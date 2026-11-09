@@ -73,7 +73,14 @@ foreach ($file in $files) {
             $expected = & node -e 'eval(Buffer.from(process.argv[1],process.argv[2]).toString())' $encodedScript base64 "repos/$repository/releases/assets/$($asset.id)"
             if ($LASTEXITCODE -ne 0) { throw "Falha ao conferir o arquivo existente: $name" }
         }
-        $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+        # Do not depend on Get-FileHash or PowerShell module autoloading:
+        # Windows PowerShell can inherit an incompatible module path from pwsh.
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $stream = [IO.File]::OpenRead($local.FullName)
+            try { $actual = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '') }
+            finally { $stream.Dispose() }
+        } finally { $hasher.Dispose() }
         if ($actual -ine $expected) { throw "Arquivo existente com hash diferente: $name" }
         Write-Host "Ja conferido: $name"
         continue
