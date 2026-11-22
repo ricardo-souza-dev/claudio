@@ -23,13 +23,19 @@ import {
 import { BUDGET_WARNING, budgetStopMessage, budgetWarningMessage, type BudgetGuard, type BudgetScope } from '../../shared/spending'
 import { flattenHistory, newId, toolCallsOf } from '../providers/history'
 import { AbortedError, ProviderError, type ProviderAdapter } from '../providers/types'
-import { ASK_TOOL, permissionFor, PLAN_TOOL, type Tool } from '../tools/types'
+import { ASK_TOOL, permissionFor, PLAN_TOOL, type Tool, type ToolResult } from '../tools/types'
 import { buildSystemPrompt } from './context'
 
 const MAX_AGENT_STEPS = 40
 const TITLE_LENGTH = 60
 const COMPACT_RESPONSE_CONTEXT =
   '\n[Claudio mode: Compact response. Answer like a terse technical agent: no greetings, no courtesy, no obvious narration, no recap unless needed. Prefer bullets and short sentences. Preserve code, commands, API names, file paths and error messages exactly.]'
+
+/** Where file changes are recorded so they can be undone. */
+export interface ChangeJournal {
+  track(thread: Thread, anchor: string, requestedPath: string, run: () => Promise<ToolResult>): Promise<{ result: ToolResult; recorded: boolean }>
+  noteCommand(thread: Thread, anchor: string): Promise<void>
+}
 
 export interface RunnerDeps {
   resolveModel(ref: ModelRef): Promise<{ adapter: ProviderAdapter; info: ModelInfo }>
@@ -42,6 +48,8 @@ export interface RunnerDeps {
   askUser?(threadId: string, request: QuestionRequest, signal: AbortSignal): Promise<QuestionAnswer[] | null>
   saveAttachments?(attachments: OutgoingAttachment[]): Promise<AttachmentPart[]>
   loadAttachments?(messages: Message[], model: ModelInfo): Promise<Message[]>
+  /** Records what the file tools change. Without it, nothing can be undone. */
+  checkpoints?: ChangeJournal
   /** The spending limits that apply to this run, or null when there are none. Read before every step. */
   budget?(thread: Thread): Promise<BudgetGuard | null>
   /** Called after each answer, so time estimates come from how this model really performs here. */
@@ -100,6 +108,8 @@ function sameModelId(requested: string, served: string): boolean {
 
 export class Runner {
   private active = new Map<string, AbortController>()
+  /** The message each running conversation is working on, and whether it has changed any file yet. */
+  private work = new Map<string, { anchor: string; recorded: boolean }>()
 
   constructor(private deps: RunnerDeps) {}
 
@@ -136,6 +146,8 @@ export class Runner {
           thread.title = title.replace(/\s+/g, ' ').slice(0, TITLE_LENGTH)
         }
         thread.plan = []
+        const revertNotes = thread.revertNotes ?? []
+        delete thread.revertNotes
         thread.messages.push({
           id: newId('m_'),
           role: 'user',
@@ -143,6 +155,7 @@ export class Runner {
           parts: [
             ...attachments,
             ...(text ? [{ type: 'text' as const, text }] : []),
+            ...revertNotes.map((note) => ({ type: 'text' as const, appContext: 'undo' as const, text: note })),
             ...(request.compactResponse ? [{ type: 'text' as const, appContext: 'compact' as const, text: COMPACT_RESPONSE_CONTEXT }] : []),
             ...(request.permissionMode === 'plan' ? [{ type: 'text' as const, appContext: 'plan' as const, text: '\n[Claudio mode: Plan. Investigate using read-only tools and present your proposed plan as your final answer. Do not edit files, run commands, or use external tools. The app will ask the user to approve the plan before execution. Do not request approval through ask_user.]' }] : [])
           ],
@@ -161,6 +174,8 @@ export class Runner {
       await deps.save(thread)
       if (request.note) deps.emit({ type: 'notice', threadId: thread.id, text: request.note })
 
+      const anchor = thread.messages.findLast((message) => message.role === 'user')?.id
+      if (anchor) this.work.set(thread.id, { anchor, recorded: false })
       await this.runAgent(thread, request.model, request.permissionMode, request.effort, controller.signal)
     } catch (error) {
       if (!(error instanceof AbortedError) && !controller.signal.aborted) {
@@ -169,7 +184,9 @@ export class Runner {
       }
     } finally {
       const assistantIds = thread.messages.slice(firstNewMessage).filter((message) => message.role === 'assistant').map((message) => message.id)
-      if (assistantIds.length) (thread.runs ??= []).push({ assistantIds, durationMs: Math.max(0, Date.now() - runStartedAt) })
+      const work = this.work.get(thread.id)
+      this.work.delete(thread.id)
+      if (assistantIds.length) (thread.runs ??= []).push({ assistantIds, durationMs: Math.max(0, Date.now() - runStartedAt), ...(work?.recorded ? { checkpointId: work.anchor } : {}) })
       thread.lastRun = controller.signal.aborted ? 'aborted' : failed ? 'error' : 'completed'
       thread.updatedAt = Date.now()
       this.publish(thread)
@@ -423,7 +440,7 @@ export class Runner {
     }
     if (signal.aborted) return this.errorResult(call, 'Cancelado pelo usuário.')
     if (tool.name === PLAN_TOOL) thread.plan = (input as { items: PlanItem[] }).items
-    return this.run(tool, call, input, signal)
+    return this.run(thread, tool, call, input, signal)
   }
 
   private checkCall(call: ToolCallPart, tools: Tool[]): { tool: Tool; input: Record<string, unknown> } | { error: string } {
@@ -443,8 +460,19 @@ export class Runner {
     return { type: 'tool_result', callId: call.id, name: call.name, content }
   }
 
-  private async run(tool: Tool, call: ToolCallPart, input: Record<string, unknown>, signal: AbortSignal): Promise<ToolResultPart> {
-    const output = await tool.run(input, signal).catch((error: Error) => ({ content: error.message, isError: true }))
+  private async run(thread: Thread, tool: Tool, call: ToolCallPart, input: Record<string, unknown>, signal: AbortSignal): Promise<ToolResultPart> {
+    const execute = (): Promise<ToolResult> => tool.run(input, signal).catch((error: Error) => ({ content: error.message, isError: true }))
+    const journal = this.deps.checkpoints
+    const work = this.work.get(thread.id)
+    let output: ToolResult
+    if (journal && work && (tool.name === 'write_file' || tool.name === 'edit_file') && typeof input.path === 'string') {
+      const tracked = await journal.track(thread, work.anchor, input.path, execute)
+      output = tracked.result
+      if (tracked.recorded) work.recorded = true
+    } else {
+      output = await execute()
+      if (journal && work && tool.name === 'run_command') await journal.noteCommand(thread, work.anchor).catch(() => undefined)
+    }
     return { type: 'tool_result', callId: call.id, name: call.name, content: output.content, ...(output.isError ? { isError: true } : {}) }
   }
 

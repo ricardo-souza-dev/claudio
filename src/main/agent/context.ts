@@ -39,3 +39,12 @@ export async function buildSystemPrompt(
   }
   return { system: sections.join('\n\n'), files }
 }
+
+const MAX_REVERTED_LISTED = 30
+
+/** Joins the next user message after the person undoes changes, so no model keeps assuming its edits are there. */
+export function revertNotice(paths: string[]): string {
+  const names = paths.slice(0, MAX_REVERTED_LISTED).map((name) => name.replace(/\s+/g, ' ')).join(', ')
+  const more = paths.length > MAX_REVERTED_LISTED ? `, and ${paths.length - MAX_REVERTED_LISTED} more` : ''
+  return `\n[Claudio: the user undid earlier changes and restored these files to how they were before: ${names}${more}. Do not assume your earlier edits to them are still in place. Read a file again before changing it.]`
+}

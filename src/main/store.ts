@@ -43,9 +43,9 @@ const EMPTY: SettingsFile = {
   prefs: { theme: 'system', memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: true, economyMode: true, warnCostUsd: 1, conversationBudgetUsd: 0, projectBudgetsUsd: {} }
 }
 
-async function writeAtomic(file: string, text: string): Promise<void> {
+export async function writeAtomic(file: string, text: string | Uint8Array): Promise<void> {
   const temporary = `${file}.${randomUUID()}.tmp`
-  await writeFile(temporary, text, 'utf8')
+  await writeFile(temporary, text)
   for (let attempt = 0; ; attempt++) {
     try {
       await rename(temporary, file)

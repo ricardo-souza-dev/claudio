@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import {
   type ApprovalRequest,
+  type Checkpoint,
   type McpStatus,
   type ModelListing,
   type ModelRef,
@@ -51,6 +52,8 @@ export interface AppState {
   questions: Record<string, QuestionRequest[]>
   notices: Record<string, string[]>
   errors: Record<string, string | undefined>
+  /** What the agent changed in each conversation, to review and undo. */
+  checkpoints: Record<string, Checkpoint[]>
 }
 
 const INITIAL: AppState = {
@@ -68,7 +71,8 @@ const INITIAL: AppState = {
   approvals: {},
   questions: {},
   notices: {},
-  errors: {}
+  errors: {},
+  checkpoints: {}
 }
 
 interface Delta {
@@ -145,6 +149,8 @@ function applyEvent(state: AppState, event: UniEvent): AppState {
       return { ...state, errors: { ...state.errors, [event.threadId]: event.text } }
     case 'mcp':
       return { ...state, mcp: event.servers }
+    case 'checkpoints':
+      return { ...state, checkpoints: { ...state.checkpoints, [event.threadId]: event.checkpoints } }
     case 'update':
     case 'terminal-data':
     case 'terminal-changed':
@@ -204,6 +210,10 @@ export function useAppStore() {
 
   const openThread = useCallback(async (id: string) => {
     dispatch({ type: 'open', thread: await api.threads.get(id) })
+  }, [])
+
+  const loadCheckpoints = useCallback(async (threadId: string) => {
+    dispatch({ type: 'event', event: { type: 'checkpoints', threadId, checkpoints: await api.checkpoints.list(threadId) } })
   }, [])
 
   useEffect(() => {
@@ -292,5 +302,5 @@ export function useAppStore() {
     })
   }, [])
 
-  return { state, refreshModels, openThread, setPrefs, setProviders, setMcp, newThread, removeThread, patchThread, send }
+  return { state, refreshModels, openThread, loadCheckpoints, setPrefs, setProviders, setMcp, newThread, removeThread, patchThread, send }
 }

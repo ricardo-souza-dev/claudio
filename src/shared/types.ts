@@ -64,7 +64,7 @@ export type StopReason = 'end' | 'tool_use' | 'length' | 'refusal' | 'aborted' |
 
 export interface TextPart {
   /** App-authored mode context; render a localized label, but replay the original text. */
-  appContext?: 'plan' | 'compact'
+  appContext?: 'plan' | 'compact' | 'undo'
   type: 'text'
   text: string
 }
@@ -142,9 +142,45 @@ export interface Thread {
   /** The task list the current model keeps while it works. Never sent back to models. */
   plan?: PlanItem[]
   /** Completed executions, separate from the append-only provider history. */
-  runs?: { assistantIds: string[]; durationMs: number }[]
+  runs?: { assistantIds: string[]; durationMs: number; /** Set when this run changed files, so the changes can be reviewed and undone. */ checkpointId?: string }[]
+  /** What the person undid since the last message. Joins the next message, so the history only grows. */
+  revertNotes?: string[]
   /** Last execution outcome, separate from provider messages (which remain append-only). */
   lastRun?: 'completed' | 'aborted' | 'error'
+}
+
+/** A file the agent changed, as the interface sees it. */
+export interface CheckpointFile {
+  path: string
+  kind: 'created' | 'modified'
+  /** Already undone. */
+  restored: boolean
+}
+
+/** Everything the agent changed in response to one message. */
+export interface Checkpoint {
+  /** The id of the message that started the work. */
+  id: string
+  createdAt: number
+  files: CheckpointFile[]
+  /** Commands the agent ran meanwhile. What they changed can't be undone. */
+  commands: number
+}
+
+/** How a file stands now, compared with what the agent left. */
+export type RestoreState = 'ready' | 'changed' | 'unchanged'
+export interface CheckpointPreviewFile extends CheckpointFile {
+  state: RestoreState
+}
+export interface CheckpointPreview {
+  files: CheckpointPreviewFile[]
+  commands: number
+}
+export type RestoreOutcome = 'restored' | 'unchanged' | 'changed' | 'failed'
+export interface RestoreResult {
+  path: string
+  outcome: RestoreOutcome
+  error?: string
 }
 
 export interface ThreadSummary {
@@ -241,6 +277,7 @@ export type UniEvent =
   | { type: 'terminal-closed'; id: string }
   | { type: 'update'; status: UpdateStatus }
   | { type: 'thread'; thread: Thread }
+  | { type: 'checkpoints'; threadId: string; checkpoints: Checkpoint[] }
   | { type: 'threads'; threads: ThreadSummary[] }
   | { type: 'run'; threadId: string; running: boolean }
   | { type: 'delta'; threadId: string; kind: 'text' | 'reasoning'; text: string }
@@ -415,6 +452,13 @@ export interface UniApi {
   prefs: {
     get(): Promise<Preferences>
     set(patch: Partial<Preferences>): Promise<Preferences>
+  }
+  checkpoints: {
+    list(threadId: string): Promise<Checkpoint[]>
+    /** Compares each file with what the agent left, so nothing the person wrote since is lost unknowingly. */
+    preview(threadId: string, id: string): Promise<CheckpointPreview>
+    /** `force` restores a file even though it changed after the agent's edit. */
+    restore(threadId: string, id: string, selection: { path: string; force: boolean }[]): Promise<{ results: RestoreResult[]; checkpoints: Checkpoint[] }>
   }
   spending: {
     /** What the saved conversations cost, priced with the catalog as it is now. */

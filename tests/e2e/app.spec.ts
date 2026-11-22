@@ -2039,3 +2039,57 @@ test('budget: Custos shows what was spent, a limit stops the next message, and r
   expect(problems).toEqual([])
   await app.close()
 })
+
+test('undo: review what the agent wrote, put it back, keep what the person wrote since, and tell the next model', async () => {
+  await seedProviders()
+  const target = path.join(workspace, 'alvo.txt')
+  await writeFile(target, 'original')
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await pickModel(page, 'Claude Simulado')
+
+  const approveWrite = async (content: string): Promise<void> => {
+    await send(page, `ferramenta: write_file ${JSON.stringify({ path: 'alvo.txt', content })}`)
+    await expect(page.getByText('Alterar este arquivo?')).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Permitir', exact: true }).click()
+    await idle(page)
+  }
+
+  await approveWrite('do agente')
+  expect(await readFile(target, 'utf8')).toBe('do agente')
+  const first = page.locator('.changes').first()
+  await expect(first).toContainText('Alterou 1 arquivo nesta resposta')
+
+  await first.getByRole('button', { name: 'Revisar e desfazer' }).click()
+  const box = first.getByRole('checkbox', { name: 'Desfazer alvo.txt' })
+  await expect(box).toBeChecked()
+  await shot(page, '14-desfazer')
+  await first.getByRole('button', { name: 'Desfazer 1 arquivo' }).click()
+  await expect(first).toContainText('Alterações desfeitas')
+  expect(await readFile(target, 'utf8')).toBe('original')
+
+  // The next model is told, in the same message the person sends, and the earlier history is left alone.
+  llm.requests.length = 0
+  await send(page, 'e agora?')
+  await idle(page)
+  expect(JSON.stringify(llm.last('anthropic')!.body.messages)).toContain('undid earlier changes')
+  await expect(page.getByText('Você desfez alterações do agente antes desta mensagem')).toBeVisible()
+
+  // Something the person wrote after the agent is never put back over silently.
+  await approveWrite('segunda do agente')
+  await writeFile(target, 'escrito pela pessoa')
+  const second = page.locator('.changes').last()
+  await second.getByRole('button', { name: 'Revisar e desfazer' }).click()
+  await expect(second).toContainText('mudou depois do agente')
+  await expect(second.getByRole('checkbox', { name: 'Desfazer alvo.txt' })).not.toBeChecked()
+  await expect(second.getByRole('button', { name: /^Desfazer \d/ })).toBeDisabled()
+  expect(await readFile(target, 'utf8')).toBe('escrito pela pessoa')
+
+  // Ticking it is the person saying they know.
+  await second.getByRole('checkbox', { name: 'Desfazer alvo.txt' }).check()
+  await second.getByRole('button', { name: 'Desfazer 1 arquivo' }).click()
+  await expect(second).toContainText('Alterações desfeitas')
+  expect(await readFile(target, 'utf8')).toBe('original')
+  expect(problems).toEqual([])
+  await app.close()
+})

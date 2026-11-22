@@ -48,6 +48,7 @@ Nenhum teste chama API real nem gera custo.
 | `src/main/git.ts` | Tudo que o painel faz com `git` e `gh`, inclusive achar submódulos e outros repositórios |
 | `src/main/commit-message.ts` | Mensagem de commit escrita por um modelo |
 | `src/main/budget.ts` | Guarda de orçamento de uma execução (`createBudgetGuard`) |
+| `src/main/checkpoints.ts` | Pontos de restauração dos arquivos que o agente grava (`CheckpointStore`) |
 | `src/main/terminals.ts` | Terminais interativos (node-pty) operados só pela pessoa |
 | `src/main/updates.ts` | Política de atualização (`electron-updater`), testável sem o GitHub |
 | `src/main/attachments.ts` | Anexos guardados fora do arquivo da conversa |
@@ -73,6 +74,7 @@ Nenhum teste chama API real nem gera custo.
 | `src/renderer/src/TerminalPanel.tsx` | Painel de terminais, ao lado do painel do projeto |
 | `src/renderer/src/Settings.tsx`, `Updates.tsx` | Ajustes, MCP e atualizações |
 | `src/renderer/src/Spending.tsx` | Orçamentos e painel de gasto, na aba Custos |
+| `src/renderer/src/Changes.tsx` | Cartão "Alterou N arquivos", com revisar e desfazer |
 | `resources/` | Ícones, gerados por `scripts/make-icons.mjs` |
 | `site/`, `scripts/build-site.mjs`, `vercel.json` | Site estático, com downloads lidos do GitHub Releases |
 | `.github/workflows/` | `release.yml` (instalador Windows por tag `v*`) e `site.yml` (Pages) |
@@ -158,6 +160,16 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 - **Parar não corrompe o histórico:** a checagem fica depois de todo resultado de ferramenta já gravado e antes da próxima chamada, então qualquer modelo retoma dali. A mensagem da pessoa fica salva, e "Tentar de novo" continua sem redigitar. Pode haver estouro de um passo, porque o custo só é conhecido depois da resposta.
 - **A parada é um erro** (`lastRun: 'error'`), então a fila de mensagens espera por "Enviar agora". Aos 75% sai um aviso uma vez por execução e por tipo de limite.
 
+### Desfazer alterações
+
+- **Cobre só `write_file` e `edit_file`.** O `Runner` envolve essas duas ferramentas em `CheckpointStore.track`: lê os bytes antes, deixa a ferramenta rodar, lê depois e, se mudou, guarda o conteúdo anterior em `checkpoints/blobs/<sha256>`. O que `run_command` ou uma ferramenta MCP altera **não é desfeito**; `noteCommand` só conta os comandos, para o cartão avisar. Não depende de Git.
+- **Um ponto de restauração por mensagem da pessoa** (`id` = id dessa mensagem, a última de `user` quando a execução começa). Uma nova tentativa sem mensagem nova cai no mesmo ponto. A execução liga-se a ele por `thread.runs[].checkpointId`, e o cartão aparece depois da última execução que o usa. Vários arquivos, ou o mesmo arquivo várias vezes, ficam no mesmo ponto, que mantém sempre o **primeiro** original.
+- **Nunca sobrescreve o que a pessoa escreveu depois.** O registro guarda o hash do arquivo como o agente o deixou (`after`). Se o arquivo atual não é nem esse nem o original, o estado é `changed`: fica desmarcado e só volta com `force`, que a interface envia quando a pessoa marca o arquivo de propósito. Arquivo apagado pela pessoa conta como `changed`.
+- **O processo principal decide, não a página.** `restore` só mexe em arquivos registrados naquele ponto, resolve cada caminho com `resolveInside` (links simbólicos não saem da pasta) e recusa durante uma execução.
+- **Sem cópia, sem edição.** Um arquivo acima de 20 MB não é alterado pelo agente, porque ficaria sem desfazer. Se a cópia não puder ser gravada, a ferramenta nem roda.
+- **O histórico não é reescrito.** Depois de desfazer, `noteRestored` põe um aviso em `thread.revertNotes`, que entra como parte `appContext: 'undo'` na **próxima** mensagem da pessoa (uma nova tentativa sem mensagem o mantém). Assim nenhum modelo continua achando que suas edições estão lá, e as mensagens antigas ficam idênticas byte a byte.
+- **Armazenamento:** `checkpoints/<id da conversa>.json` mais os blobs, que são guardados uma vez por conteúdo. As cópias ficam sem criptografia na pasta de dados, como as próprias conversas. Apagar a conversa apaga o índice e os blobs que nenhuma outra conversa usa (`forget`).
+
 ### Terminais e atualizações
 
 - **Terminais são só da pessoa:** `TerminalService` não é ferramenta do agente. O ambiente do shell perde `*_API_KEY`, `*_AUTH_TOKEN`, `*_SECRET`, `ELECTRON_*` e `CLAUDIO_*`. O diretório inicial passa por `resolveInside`, o limite é de 16 sessões e elas acompanham a conversa: fecham quando o projeto muda.
@@ -187,6 +199,7 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 - Modelo automático ou manual, e força do modelo de Baixa a Máxima
 - Seletor que recomenda um modelo e mostra custo, força e tempo aproximados, com velocidade medida
 - Perfis econômico, equilibrado e desempenho no modelo automático, e avisos antes de o contexto acabar
+- Desfazer o que o agente gravou: cartão por resposta, revisão arquivo a arquivo, proteção do que a pessoa escreveu depois e aviso ao próximo modelo
 - Orçamento por conversa e mensal por projeto, com aviso aos 75% e parada no limite, e painel de gasto (hoje, 7 dias, mês, total, por dia, projeto e modelo) em Ajustes → Custos
 - Modelos sem suporte a ferramentas continuam só com texto, com aviso
 
@@ -233,7 +246,7 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 
 **Verificado no Windows (até 2026-11-07):** 144 testes de unidade e integração e 14 de ponta a ponta no Electron real, passando pelos SDKs oficiais contra o servidor simulado, com `git` real em repositórios temporários. Também foram confirmados `npm ci` em pasta vazia e `npm run dev`.
 
-**Verificado em Linux (container de nuvem, 2026-11-22):** na versão 1.0.18, `npm run typecheck` sem erros; `npm test` com 193 aprovados e 22 pulados (os do script de release e do upload, que exigem Windows PowerShell); `npm run test:e2e` com `xvfb-run` com 27 aprovados, 1 pulado (scripts PowerShell) e 1 falho, o de MCP (veja abaixo). Com o orçamento e o painel de gasto, a mesma bateria deu `typecheck` sem erros, 214 aprovados e 22 pulados nos testes de unidade, e 29 aprovados e 1 pulado no e2e, com o teste de MCP passando. Os testes e2e do Linux provam a interface no Electron real, não o uso do app por uma pessoa.
+**Verificado em Linux (container de nuvem, 2026-11-22):** na versão 1.0.18, `npm run typecheck` sem erros; `npm test` com 193 aprovados e 22 pulados (os do script de release e do upload, que exigem Windows PowerShell); `npm run test:e2e` com `xvfb-run` com 27 aprovados, 1 pulado (scripts PowerShell) e 1 falho, o de MCP (veja abaixo). Com o orçamento e o painel de gasto, a mesma bateria deu `typecheck` sem erros, 214 aprovados e 22 pulados nos testes de unidade, e 29 aprovados e 1 pulado no e2e, com o teste de MCP passando. Com o desfazer, mais 21 testes de unidade em `tests/checkpoints.test.ts`, 5 no `Runner` e 1 e2e, e a bateria ficou em 240 aprovados e 22 pulados nos testes de unidade, e 30 aprovados e 1 pulado no e2e. Os testes e2e do Linux provam a interface no Electron real, não o uso do app por uma pessoa.
 
 **Com APIs reais, feito pelo usuário:** listagem de modelos da Anthropic (13) e da OpenAI (50). O gpt-4o e o gpt-6.1-sol, pelo protocolo Responses, chamaram `list_dir`, `read_file`, `search`, `run_command` e `update_plan` (64 chamadas, todas com resultado gravado), contadas nas conversas salvas.
 
@@ -262,7 +275,7 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 Em ordem de prioridade:
 
 1. **Testar a edição com um modelo real,** em uma pasta descartável com Git, e depois com Anthropic e Gemini. Vem primeiro porque pode invalidar partes do que já existe.
-2. **Desfazer alterações.** Pontos de restauração para reverter o que um modelo mudou, inclusive sem Git. Sem isso, ninguém deixa um agente editar sem supervisão.
+2. **Desfazer, o que falta.** Os arquivos gravados por `write_file` e `edit_file` já voltam, com ou sem Git. Falta cobrir o que `run_command` e as ferramentas MCP mudam (hoje o cartão só avisa), mostrar o diff antes de desfazer, refazer, e testar com um modelo real.
 3. **Conversas longas.** Hoje não há compactação, então uma conversa extensa acaba em erro ao atingir o limite de contexto do modelo.
 4. **Saída de comandos ao vivo.** Os terminais da pessoa já mostram a saída ao vivo, mas o `run_command` do agente só devolve o resultado quando o comando termina.
 5. **Chrome de primeira classe.** Validar os atalhos, repassar imagens de ferramentas MCP aos modelos, que hoje são omitidas, e avaliar uma extensão própria, com permissão por site e capturas de tela na conversa.

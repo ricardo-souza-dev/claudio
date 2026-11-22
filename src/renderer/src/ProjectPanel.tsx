@@ -856,7 +856,7 @@ function RepoBlock({
   )
 }
 
-export function ProjectPanel({ threadId, workspace, running, commitModel, onClose, onRunScript }: { threadId: string; workspace: string; running: boolean; commitModel: CommitModel | null; onClose(): void; onRunScript(path: string): Promise<void> }) {
+export function ProjectPanel({ threadId, workspace, running, changeToken, commitModel, onClose, onRunScript }: { threadId: string; workspace: string; running: boolean; /** Changes when files are put back by an undo, which no run or focus event announces. */ changeToken: number; commitModel: CommitModel | null; onClose(): void; onRunScript(path: string): Promise<void> }) {
   const [found, setFound] = useState<ProjectRepos | null>(null)
   const [statuses, setStatuses] = useState<Record<string, GitStatus>>({})
   const [tab, setTab] = useState<'git' | 'files'>('git')
@@ -888,6 +888,10 @@ export function ProjectPanel({ threadId, workspace, running, commitModel, onClos
   useEffect(() => {
     if (!running) void refresh()
   }, [running, refresh])
+
+  useEffect(() => {
+    if (changeToken > 0) void refresh()
+  }, [changeToken, refresh])
 
   const repos = found?.repos ?? []
   const hasGit = repos.length > 0

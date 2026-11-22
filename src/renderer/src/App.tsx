@@ -168,6 +168,10 @@ export function App() {
     setProjectError(null)
   }, [thread?.id, thread?.workspace])
 
+  useEffect(() => {
+    if (thread?.id) void store.loadCheckpoints(thread.id)
+  }, [thread?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // The next queued message goes out when a run ends on its own. After an error or an
   // interruption the person may want something else, so it waits for "Enviar agora".
   useEffect(() => {
@@ -457,6 +461,7 @@ export function App() {
           </div>
         ) : (
           <Transcript
+            checkpoints={state.checkpoints[thread.id] ?? []}
             thread={thread}
             models={listing.models}
             live={state.live[thread.id]}
@@ -518,7 +523,7 @@ export function App() {
         )}
       </main>
 
-      {showPanel && <ProjectPanel threadId={thread.id} workspace={thread.workspace!} running={running} commitModel={commitModel} onRunScript={async (path) => {
+      {showPanel && <ProjectPanel threadId={thread.id} workspace={thread.workspace!} running={running} changeToken={(state.checkpoints[thread.id] ?? []).reduce((count, entry) => count + entry.files.filter((file) => file.restored).length, 0)} commitModel={commitModel} onRunScript={async (path) => {
         const session = await api.terminal.create(thread.id, path)
         if (activeThreadId.current === session.threadId) setTerminalOpen(true)
       }} onClose={() => setPanelOpen(false)} />}

@@ -5,6 +5,7 @@ import type { ApprovalDecision, ApprovalRequest, GitAction, ModelRef, Protocol, 
 import { Runner } from './agent/runner'
 import { AttachmentStore } from './attachments'
 import { createBudgetGuard } from './budget'
+import { CheckpointStore, noteRestored } from './checkpoints'
 import { generateCommitMessage } from './commit-message'
 import { discoverRepositories, GitService } from './git'
 import { ModelFactsStore } from './model-facts'
@@ -126,6 +127,8 @@ async function start(): Promise<void> {
     for (const terminal of terminals.list()) terminals.close(terminal.id)
   })
 
+  const checkpoints = new CheckpointStore(join(dataDir, 'checkpoints'), { onChange: (threadId, list) => emit({ type: 'checkpoints', threadId, checkpoints: list }) })
+
   const pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>()
   const pendingQuestions = new Map<string, (answers: QuestionAnswer[] | null) => void>()
 
@@ -139,6 +142,7 @@ async function start(): Promise<void> {
     save: (thread) => threads.save(thread),
     saveAttachments: (files) => attachments.save(files),
     loadAttachments: (messages, model) => attachments.load(messages, model),
+    checkpoints,
     budget: (thread) => createBudgetGuard({ thread, prefs: settings.prefs(), models: async () => (await models.list()).models, threads: () => threads.each() }),
     recordSpeed: (ref, firstTokenMs, generatingMs, outputTokens) => settings.recordSpeed(ref, firstTokenMs, generatingMs, outputTokens),
     requestApproval: (threadId: string, request: ApprovalRequest, signal: AbortSignal) =>
@@ -187,6 +191,25 @@ async function start(): Promise<void> {
     return prefs
   })
 
+  handle('checkpoints.list', (threadId: string) => checkpoints.list(threadId))
+  handle('checkpoints.preview', async (threadId: string, id: string) => {
+    const thread = await threads.get(threadId)
+    if (!thread) throw new Error('Conversa não encontrada.')
+    return checkpoints.preview(thread, String(id))
+  })
+  handle('checkpoints.restore', async (threadId: string, id: string, selection: { path: string; force: boolean }[]) => {
+    const thread = await threads.get(threadId)
+    if (!thread) throw new Error('Conversa não encontrada.')
+    // The agent could still be writing the files being put back.
+    if (runner.isRunning(threadId)) throw new Error('Aguarde a execução terminar para desfazer alterações.')
+    // Only plain paths and a yes/no per file come from the page.
+    const clean = Array.isArray(selection) ? selection.flatMap((entry) => (typeof entry?.path === 'string' ? [{ path: entry.path, force: entry.force === true }] : [])) : []
+    const outcome = await checkpoints.restore(thread, String(id), clean)
+    noteRestored(thread, outcome.results)
+    await threads.save(thread)
+    return outcome
+  })
+
   handle('spending.report', async () => {
     const priced = (await models.list()).models
     const entries: SpendEntry[] = []
@@ -228,6 +251,7 @@ async function start(): Promise<void> {
     runner.stop(id)
     terminals.closeThread(id)
     await threads.remove(id)
+    await checkpoints.forget(id).catch(() => undefined)
     return threads.list()
   })
   handle('threads.rename', async (id: string, title: string) => {

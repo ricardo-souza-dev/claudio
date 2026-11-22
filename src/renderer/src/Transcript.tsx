@@ -6,6 +6,7 @@ import {
   type ApprovalDecision,
   type ApprovalRequest,
   type AttachmentPart,
+  type Checkpoint,
   type Message,
   type ModelInfo,
   type ModelRef,
@@ -17,12 +18,14 @@ import {
   type ToolResultPart
 } from '../../shared/types'
 import { summarizeUsage } from '../../shared/usage'
+import { Changes } from './Changes'
 import { formatFileSize, formatElapsed, formatEstimatedUsd, formatTokens, modelLabel, providerLabel, shortToolName, toolActivity, toolSummary, usageLabel } from './format'
 import { Markdown } from './Markdown'
 import { api, type LiveTurn } from './store'
 
 interface TranscriptProps {
   thread: Thread
+  checkpoints: Checkpoint[]
   models: ModelInfo[]
   live: LiveTurn | undefined
   running: boolean
@@ -365,10 +368,12 @@ function resultsByMessage(messages: Message[]): Map<string, Map<string, ToolResu
 
 const NO_RESULTS = new Map<string, ToolResultPart>()
 
-export function Transcript({ thread, models, live, running, approvals, questions, notices, error, onRetry, onChangeModel }: TranscriptProps) {
+export function Transcript({ thread, checkpoints, models, live, running, approvals, questions, notices, error, onRetry, onChangeModel }: TranscriptProps) {
   const scroller = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
   const results = useMemo(() => resultsByMessage(thread.messages), [thread.messages])
+  // A retry works on the same message, so several runs can share one set of changes. The card goes after the last.
+  const lastRunOf = useMemo(() => new Map((thread.runs ?? []).flatMap((entry) => (entry.checkpointId ? [[entry.checkpointId, entry] as const] : []))), [thread.runs])
   const latestAssistant = thread.messages.findLast((message) => message.role === 'assistant')
 
   useEffect(() => {
@@ -403,6 +408,7 @@ export function Transcript({ thread, models, live, running, approvals, questions
             </div>
           )}
           {text && <div className="user-text">{text}</div>}
+          {message.parts.some((part) => part.type === 'text' && part.appContext === 'undo') && <div className="turn-note">Você desfez alterações do agente antes desta mensagem</div>}
           {message.parts.some((part) => part.type === 'text' && part.appContext === 'plan') && <div className="turn-note">Modo Plano · investigar e aguardar aprovação antes de executar</div>}
         </article>
       )
@@ -449,6 +455,10 @@ export function Transcript({ thread, models, live, running, approvals, questions
           Custo estimado desta resposta: {!hasUsage || (!turnUsage.costComplete && turnUsage.cost === 0) ? 'preço indisponível' : `${formatEstimatedUsd(turnUsage.cost)}${turnUsage.costComplete ? '' : ' (parcial)'}`}
         </div>
       )}
+      {run?.checkpointId && lastRunOf.get(run.checkpointId) === run && (() => {
+        const changes = checkpoints.find((entry) => entry.id === run.checkpointId)
+        return changes ? <Changes threadId={thread.id} checkpoint={changes} running={running} /> : null
+      })()}
       </div>
     )
   })

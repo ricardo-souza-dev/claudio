@@ -1,10 +1,11 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { ApprovalDecision, ApprovalRequest, ModelInfo, ModelRef, PermissionMode, Thread, UniEvent } from '../src/shared/types'
 import { Runner, type RunnerDeps } from '../src/main/agent/runner'
 import { createBudgetGuard } from '../src/main/budget'
+import { CheckpointStore, noteRestored } from '../src/main/checkpoints'
 import { createAdapter } from '../src/main/providers/catalog'
 import { textOf } from '../src/main/providers/history'
 import type { ProviderConnection } from '../src/main/providers/types'
@@ -623,5 +624,83 @@ describe('orçamento', () => {
     await h.runner.send(thread, agent(thread, 'oi', CLAUDE))
 
     expect(errorsOf(h)).toEqual([])
+  })
+})
+
+describe('desfazer', () => {
+  let dataDir: string
+  beforeEach(async () => { dataDir = await mkdtemp(path.join(tmpdir(), 'uni-undo-')) })
+  afterEach(() => rm(dataDir, { recursive: true, force: true }))
+  const withStore = () => {
+    const checkpoints = new CheckpointStore(dataDir)
+    return { checkpoints, h: harness('allow', true, { checkpoints }) }
+  }
+  const call = (tool: string, input: object) => `ferramenta: ${tool} ${JSON.stringify(input)}`
+
+  it('records what the agent writes under the message that started the work, and links the run to it', async () => {
+    const { checkpoints, h } = withStore()
+    await writeFile(path.join(workspace, 'a.txt'), 'original')
+    const thread = newThread()
+
+    await h.runner.send(thread, agent(thread, call('write_file', { path: 'a.txt', content: 'do agente' }), CLAUDE))
+
+    const anchor = thread.messages.find((message) => message.role === 'user')!.id
+    expect(await readFile(path.join(workspace, 'a.txt'), 'utf8')).toBe('do agente')
+    expect(thread.runs!.at(-1)!.checkpointId).toBe(anchor)
+    expect((await checkpoints.list(thread.id))).toMatchObject([{ id: anchor, files: [{ path: 'a.txt', kind: 'modified' }] }])
+  })
+
+  it('does not link a run that changed nothing, and counts commands without showing them alone', async () => {
+    const { checkpoints, h } = withStore()
+    const thread = newThread()
+
+    await h.runner.send(thread, agent(thread, call('run_command', { command: 'echo oi' }), CLAUDE))
+
+    expect(thread.runs!.at(-1)!.checkpointId).toBeUndefined()
+    expect(await checkpoints.list(thread.id)).toEqual([])
+  })
+
+  it('records nothing for a write the person denied', async () => {
+    const h = harness('deny', true, { checkpoints: new CheckpointStore(dataDir) })
+    const thread = newThread()
+
+    await h.runner.send(thread, agent(thread, call('write_file', { path: 'nao.txt', content: 'x' }), CLAUDE))
+
+    await expect(stat(path.join(workspace, 'nao.txt'))).rejects.toThrow()
+    expect(thread.runs!.at(-1)!.checkpointId).toBeUndefined()
+  })
+
+  it('tells the next model what was undone, without touching the history', async () => {
+    const { checkpoints, h } = withStore()
+    await writeFile(path.join(workspace, 'a.txt'), 'original')
+    const thread = newThread()
+    await h.runner.send(thread, agent(thread, call('write_file', { path: 'a.txt', content: 'do agente' }), CLAUDE))
+    const anchor = thread.messages.find((message) => message.role === 'user')!.id
+
+    const outcome = await checkpoints.restore(thread, anchor, [{ path: 'a.txt', force: false }])
+    noteRestored(thread, outcome.results)
+    expect(thread.revertNotes).toHaveLength(1)
+    const before = JSON.stringify(thread.messages)
+
+    await h.runner.send(thread, agent(thread, 'e agora?', GPT))
+
+    expect(await readFile(path.join(workspace, 'a.txt'), 'utf8')).toBe('original')
+    // Earlier messages are byte-identical; the note rides on the new user message.
+    expect(JSON.stringify(thread.messages).startsWith(before.slice(0, -1))).toBe(true)
+    const next = thread.messages.filter((message) => message.role === 'user').at(-1)!
+    expect(next.parts.some((part) => part.type === 'text' && part.appContext === 'undo' && part.text.includes('a.txt'))).toBe(true)
+    expect(thread.revertNotes).toBeUndefined()
+    expect(JSON.stringify(llm.last('openai-responses')!.body.input)).toContain('undid earlier changes')
+  })
+
+  it('carries the note over a retry that adds no message, until the next real message', async () => {
+    const { h } = withStore()
+    const thread = newThread()
+    thread.revertNotes = ['\n[Claudio: nota]']
+    thread.messages.push({ id: 'm_u', role: 'user', parts: [{ type: 'text', text: 'pendente' }], createdAt: Date.now() })
+
+    await h.runner.send(thread, { threadId: thread.id, text: '', model: CLAUDE, permissionMode: 'ask' })
+
+    expect(thread.revertNotes).toEqual(['\n[Claudio: nota]'])
   })
 })
