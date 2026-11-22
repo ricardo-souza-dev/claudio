@@ -29,6 +29,7 @@ interface SettingsFile {
   speeds?: Record<string, ModelSpeed>
 }
 
+const MAX_BUDGET_USD = 1_000_000
 const MIN_OUTPUT_TO_MEASURE = 5
 const MIN_GENERATING_MS = 50
 /** Recent answers count more, so a provider that got faster or slower shows up quickly. */
@@ -39,7 +40,7 @@ const EMPTY: SettingsFile = {
   baseUrls: {},
   custom: [],
   mcp: null,
-  prefs: { theme: 'system', memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: true, economyMode: true, warnCostUsd: 1 }
+  prefs: { theme: 'system', memory: '', lastModel: null, permissionMode: 'ask', effort: null, autoModel: true, economyMode: true, warnCostUsd: 1, conversationBudgetUsd: 0, projectBudgetsUsd: {} }
 }
 
 async function writeAtomic(file: string, text: string): Promise<void> {
@@ -114,7 +115,15 @@ export class SettingsStore {
   }
 
   async setPrefs(patch: Partial<Preferences>): Promise<Preferences> {
-    this.data.prefs = { ...this.data.prefs, ...patch }
+    // These come from the page, and a limit that isn't a plain amount would silently disable or jam the guard.
+    const clean: Partial<Preferences> = { ...patch }
+    const amount = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.min(value, MAX_BUDGET_USD) : 0)
+    if ('conversationBudgetUsd' in clean) clean.conversationBudgetUsd = amount(clean.conversationBudgetUsd)
+    if ('projectBudgetsUsd' in clean) {
+      const entries = Object.entries(clean.projectBudgetsUsd ?? {}).flatMap(([workspace, value]) => (amount(value) > 0 ? [[workspace, amount(value)] as const] : []))
+      clean.projectBudgetsUsd = Object.fromEntries(entries)
+    }
+    this.data.prefs = { ...this.data.prefs, ...clean }
     await this.save()
     return this.data.prefs
   }
@@ -274,6 +283,24 @@ export class ThreadStore {
 
   list(): ThreadSummary[] {
     return [...this.summaries.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  /** Every saved conversation, one at a time, without keeping them in memory. A live one is read as it is now. */
+  async *each(): AsyncGenerator<Thread> {
+    for (const id of [...this.summaries.keys()]) {
+      const cached = this.cache.get(id)
+      if (cached) {
+        yield cached
+        continue
+      }
+      const text = await readFile(this.fileFor(id), 'utf8').catch(() => null)
+      if (!text) continue
+      try {
+        yield JSON.parse(text) as Thread
+      } catch {
+        // A corrupt file costs that one conversation.
+      }
+    }
   }
 
   async get(id: string): Promise<Thread | null> {

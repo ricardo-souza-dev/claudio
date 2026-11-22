@@ -1991,3 +1991,51 @@ test('interactive terminals: sessions follow conversations and close when their 
   expect(problems).toEqual([])
   await app.close()
 })
+
+test('budget: Custos shows what was spent, a limit stops the next message, and raising it resumes', async () => {
+  await seedProviders()
+  const { app, page, problems } = await launch()
+  await openProject(app, page)
+  await pickModel(page, 'Claude Simulado')
+  await send(page, 'primeira')
+  await idle(page)
+
+  const openCosts = async (): Promise<void> => {
+    await page.getByRole('button', { name: 'Ajustes' }).click()
+    await page.getByRole('button', { name: 'Custos' }).click()
+  }
+  await openCosts()
+  await expect(page.getByRole('heading', { name: 'Gasto' })).toBeVisible()
+  await expect(page.locator('.spend-tile', { hasText: 'Total' }).locator('dd')).not.toHaveText(/^US\$\s0,00$/)
+  await expect(page.locator('.budget-name', { hasText: path.basename(workspace) })).toBeVisible()
+  await expect(page.locator('.spend-table')).toContainText('Claude Simulado')
+  await expect(page.locator('.spend-chart')).toBeVisible()
+
+  // A limit far below one answer's cost: the next message must not reach any model.
+  const limit = page.getByLabel('Limite por conversa, em dólares')
+  await limit.fill('0,00001')
+  await limit.press('Enter')
+  await expect.poll(() => page.evaluate(async () => (await window.uni.prefs.get()).conversationBudgetUsd)).toBe(0.00001)
+  await shot(page, '13-orcamento')
+  await page.getByRole('button', { name: 'Voltar à conversa' }).click()
+
+  llm.requests.length = 0
+  await send(page, 'segunda')
+  await expect(page.getByRole('alert')).toContainText('Limite de orçamento da conversa atingido', { timeout: 15_000 })
+  await idle(page)
+  expect(llm.requests.filter((request) => request.protocol === 'anthropic')).toHaveLength(0)
+
+  // Raising the limit and trying again resumes from the same message, without retyping it.
+  await openCosts()
+  const again = page.getByLabel('Limite por conversa, em dólares')
+  await again.fill('')
+  await again.press('Enter')
+  await expect.poll(() => page.evaluate(async () => (await window.uni.prefs.get()).conversationBudgetUsd)).toBe(0)
+  await page.getByRole('button', { name: 'Voltar à conversa' }).click()
+  await page.getByRole('button', { name: 'Tentar de novo' }).click()
+  await idle(page)
+  await expect.poll(() => llm.requests.filter((request) => request.protocol === 'anthropic').length).toBeGreaterThan(0)
+  await expect(page.locator('.user-text')).toHaveCount(2)
+  expect(problems).toEqual([])
+  await app.close()
+})

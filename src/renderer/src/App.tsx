@@ -505,7 +505,7 @@ export function App() {
               permission={prefs.permissionMode}
               running={running}
               hasTools={toolCount > 0}
-              meter={<ContextMeter messages={thread.messages} models={listing.models} model={listing.models.find((entry) => model && modelKey(entry) === modelKey(model))} effort={prefs.effort} />}
+              meter={<ContextMeter messages={thread.messages} models={listing.models} model={listing.models.find((entry) => model && modelKey(entry) === modelKey(model))} effort={prefs.effort} budget={prefs.conversationBudgetUsd} />}
               onPickModel={openPicker}
               onDraftChange={setPickerDraft}
               onEffortChange={(effort) => void store.setPrefs({ effort })}
@@ -554,6 +554,7 @@ export function App() {
           errors={listing.errors}
           mcp={state.mcp}
           prefs={prefs}
+          projects={recentProjects}
           onProviders={store.setProviders}
           onMcp={store.setMcp}
           onPrefs={store.setPrefs}

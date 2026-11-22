@@ -1,8 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { buildReport, spendEntries, type SpendEntry } from '../shared/spending'
 import type { ApprovalDecision, ApprovalRequest, GitAction, ModelRef, Protocol, QuestionAnswer, QuestionRequest, SendRequest, UniEvent } from '../shared/types'
 import { Runner } from './agent/runner'
 import { AttachmentStore } from './attachments'
+import { createBudgetGuard } from './budget'
 import { generateCommitMessage } from './commit-message'
 import { discoverRepositories, GitService } from './git'
 import { ModelFactsStore } from './model-facts'
@@ -137,6 +139,7 @@ async function start(): Promise<void> {
     save: (thread) => threads.save(thread),
     saveAttachments: (files) => attachments.save(files),
     loadAttachments: (messages, model) => attachments.load(messages, model),
+    budget: (thread) => createBudgetGuard({ thread, prefs: settings.prefs(), models: async () => (await models.list()).models, threads: () => threads.each() }),
     recordSpeed: (ref, firstTokenMs, generatingMs, outputTokens) => settings.recordSpeed(ref, firstTokenMs, generatingMs, outputTokens),
     requestApproval: (threadId: string, request: ApprovalRequest, signal: AbortSignal) =>
       new Promise<ApprovalDecision>((resolve) => {
@@ -182,6 +185,13 @@ async function start(): Promise<void> {
     const prefs = await settings.setPrefs(patch)
     nativeTheme.themeSource = prefs.theme
     return prefs
+  })
+
+  handle('spending.report', async () => {
+    const priced = (await models.list()).models
+    const entries: SpendEntry[] = []
+    for await (const thread of threads.each()) entries.push(...spendEntries(thread, priced))
+    return buildReport(entries, Date.now())
   })
 
   handle('providers.list', () => settings.providers())

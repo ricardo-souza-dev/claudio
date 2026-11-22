@@ -1,17 +1,15 @@
 import { modelKey, type Effort, type ModelInfo, type ModelRef, type Usage } from '../../shared/types'
+import { formatUsd } from '../../shared/usage'
 
 const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
-const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
 
 export const EFFORT_LABELS: Record<Effort, string> = { low: 'Baixa', medium: 'Média', high: 'Alta', xhigh: 'Extra', max: 'Máxima' }
 
-export function formatUsd(amount: number): string {
-  return usd.format(amount)
-}
+export { formatUsd }
 
 export function formatEstimatedUsd(amount: number): string {
   if (amount > 0 && amount < 0.001) return '<US$ 0,001'
-  return `~${usd.format(Number(amount.toPrecision(2)))}`
+  return `~${formatUsd(Number(amount.toPrecision(2)))}`
 }
 
 export function formatEstimatedSeconds(seconds: number): string {

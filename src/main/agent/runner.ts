@@ -20,6 +20,7 @@ import {
   type ToolResultPart,
   type UniEvent
 } from '../../shared/types'
+import { BUDGET_WARNING, budgetStopMessage, budgetWarningMessage, type BudgetGuard, type BudgetScope } from '../../shared/spending'
 import { flattenHistory, newId, toolCallsOf } from '../providers/history'
 import { AbortedError, ProviderError, type ProviderAdapter } from '../providers/types'
 import { ASK_TOOL, permissionFor, PLAN_TOOL, type Tool } from '../tools/types'
@@ -41,6 +42,8 @@ export interface RunnerDeps {
   askUser?(threadId: string, request: QuestionRequest, signal: AbortSignal): Promise<QuestionAnswer[] | null>
   saveAttachments?(attachments: OutgoingAttachment[]): Promise<AttachmentPart[]>
   loadAttachments?(messages: Message[], model: ModelInfo): Promise<Message[]>
+  /** The spending limits that apply to this run, or null when there are none. Read before every step. */
+  budget?(thread: Thread): Promise<BudgetGuard | null>
   /** Called after each answer, so time estimates come from how this model really performs here. */
   recordSpeed?(ref: ModelRef, firstTokenMs: number, generatingMs: number, outputTokens: number): void
 }
@@ -284,8 +287,19 @@ export class Runner {
     if (signal.aborted) return
     const tools = [...this.deps.toolsFor(thread.workspace)].sort((a, b) => a.name.localeCompare(b.name))
     let turnTools = tools
+    const guard = await this.deps.budget?.(thread)
+    const warned = new Set<BudgetScope>()
+    if (signal.aborted) return
 
     for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+      // Every tool call already has its result here, so stopping leaves a history any model can resume.
+      for (const state of guard?.check() ?? []) {
+        if (state.fraction >= 1) throw new Error(budgetStopMessage(state, guard!.projectName))
+        if (state.fraction >= BUDGET_WARNING && !warned.has(state.scope)) {
+          warned.add(state.scope)
+          this.deps.emit({ type: 'notice', threadId: thread.id, text: budgetWarningMessage(state, guard!.projectName) })
+        }
+      }
       const outcome = await this.streamTurn({
         info,
         adapter,

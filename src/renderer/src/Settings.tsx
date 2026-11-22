@@ -4,6 +4,7 @@ import type { McpStatus, ModelInfo, Preferences, Protocol, ProviderTest, Provide
 import { remoteErrorMessage } from './format'
 import { api } from './store'
 
+import { Spending } from './Spending'
 import { Updates } from './Updates'
 
 type Tab = 'providers' | 'mcp' | 'memory' | 'costs' | 'updates'
@@ -14,6 +15,8 @@ interface SettingsProps {
   errors: Record<string, string>
   mcp: McpStatus[]
   prefs: Preferences
+  /** Project folders of the saved conversations. */
+  projects: string[]
   onProviders(providers: ProviderView[]): void
   onMcp(servers: McpStatus[]): void
   onPrefs(patch: Partial<Preferences>): Promise<void>
@@ -329,7 +332,7 @@ function McpTab({ mcp, onMcp }: Pick<SettingsProps, 'mcp' | 'onMcp'>) {
   )
 }
 
-function CostsTab({ prefs, onPrefs }: Pick<SettingsProps, 'prefs' | 'onPrefs'>) {
+function CostsTab({ prefs, models, projects, onPrefs }: Pick<SettingsProps, 'prefs' | 'models' | 'projects' | 'onPrefs'>) {
   const [warn, setWarn] = useState(String(prefs.warnCostUsd))
   const parsed = Number(warn)
   const valid = Number.isFinite(parsed) && parsed >= 0
@@ -364,6 +367,7 @@ function CostsTab({ prefs, onPrefs }: Pick<SettingsProps, 'prefs' | 'onPrefs'>) 
           Salvar limite
         </button>
       </div>
+      <Spending prefs={prefs} models={models} projects={projects} onPrefs={onPrefs} />
     </>
   )
 }
@@ -445,7 +449,7 @@ export function Settings(props: SettingsProps) {
           {tab === 'providers' && <ProvidersTab providers={props.providers} models={props.models} errors={props.errors} onProviders={props.onProviders} onClose={onClose} />}
           {tab === 'mcp' && <McpTab mcp={props.mcp} onMcp={props.onMcp} />}
           {tab === 'memory' && <MemoryTab prefs={props.prefs} onPrefs={props.onPrefs} />}
-          {tab === 'costs' && <CostsTab prefs={props.prefs} onPrefs={props.onPrefs} />}
+          {tab === 'costs' && <CostsTab prefs={props.prefs} models={props.models} projects={props.projects} onPrefs={props.onPrefs} />}
           {tab === 'updates' && <Updates />}
         </div>
       </div>

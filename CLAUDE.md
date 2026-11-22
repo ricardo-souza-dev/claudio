@@ -37,7 +37,8 @@ Nenhum teste chama API real nem gera custo.
 | Caminho | O que tem |
 |---|---|
 | `src/shared/types.ts` | Formato canônico da conversa e contrato entre os processos (`UniApi`, `UniEvent`) |
-| `src/shared/usage.ts` | Soma de tokens, contexto em uso e custo estimado |
+| `src/shared/usage.ts` | Soma de tokens, contexto em uso e custo estimado (`messageCost`, `formatUsd`) |
+| `src/shared/spending.ts` | Lançamentos de gasto, relatório, limites e mensagens de orçamento |
 | `src/shared/auto-model.ts` | Escolha automática de modelo e estimativas de custo e tempo |
 | `src/main/index.ts` | Janela, segurança do Electron e canais IPC |
 | `src/main/store.ts` | Chaves criptografadas, preferências e conversas em JSON |
@@ -46,6 +47,7 @@ Nenhum teste chama API real nem gera custo.
 | `src/main/project.ts` | Raiz do projeto e contexto geral enviado aos modelos |
 | `src/main/git.ts` | Tudo que o painel faz com `git` e `gh`, inclusive achar submódulos e outros repositórios |
 | `src/main/commit-message.ts` | Mensagem de commit escrita por um modelo |
+| `src/main/budget.ts` | Guarda de orçamento de uma execução (`createBudgetGuard`) |
 | `src/main/terminals.ts` | Terminais interativos (node-pty) operados só pela pessoa |
 | `src/main/updates.ts` | Política de atualização (`electron-updater`), testável sem o GitHub |
 | `src/main/attachments.ts` | Anexos guardados fora do arquivo da conversa |
@@ -70,6 +72,7 @@ Nenhum teste chama API real nem gera custo.
 | `src/renderer/src/ProfilePicker.tsx`, `EffortPicker.tsx` | Perfil (econômico, equilibrado, desempenho) e força do modelo |
 | `src/renderer/src/TerminalPanel.tsx` | Painel de terminais, ao lado do painel do projeto |
 | `src/renderer/src/Settings.tsx`, `Updates.tsx` | Ajustes, MCP e atualizações |
+| `src/renderer/src/Spending.tsx` | Orçamentos e painel de gasto, na aba Custos |
 | `resources/` | Ícones, gerados por `scripts/make-icons.mjs` |
 | `site/`, `scripts/build-site.mjs`, `vercel.json` | Site estático, com downloads lidos do GitHub Releases |
 | `.github/workflows/` | `release.yml` (instalador Windows por tag `v*`) e `site.yml` (Pages) |
@@ -146,6 +149,15 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 - Submódulos e repositórios dentro da pasta aparecem separados, cada um com seus controles (`discoverRepositories`). Um submódulo não baixado aparece na lista de arquivos, mas é uma pasta vazia.
 - **A mensagem de commit só vai ao modelo quando a pessoa clica.** Ele recebe o que está preparado, ou tudo quando nada está, sem ferramentas e com o diff tratado como dado (`changesForMessage`). Arquivos que costumam guardar segredos são citados pelo nome, e o conteúdo fica de fora.
 
+### Orçamento e gasto
+
+- **O gasto vem das conversas salvas, não de um registro à parte.** `spendEntries` soma cada resposta com `usage` pelo preço **atual** do catálogo (`messageCost`). Por isso apagar uma conversa tira o gasto dela dos valores e dos limites, e uma mudança de preço no models.dev reescreve o passado. É uma estimativa, e a tela diz isso.
+- **Modelo sem preço custa zero e é contado à parte** (`unpricedThisMonth`). Um limite não protege o que o Claudio não consegue precificar.
+- **Dois limites, em dólares, 0 = sem limite:** por conversa (`conversationBudgetUsd`) e mensal por pasta de projeto (`projectBudgetsUsd`, chave é o caminho em `thread.workspace`). O mês é o calendário local. O processo principal valida os valores em `setPrefs`, porque vêm da página.
+- **Quem aplica é o processo principal,** no início de cada passo do `Runner`, antes de chamar o modelo. A guarda soma as outras conversas do projeto uma vez por execução e a conversa em curso a cada passo, então uma execução longa não relê o disco. Sem limite configurado, a guarda é `null` e nada é lido.
+- **Parar não corrompe o histórico:** a checagem fica depois de todo resultado de ferramenta já gravado e antes da próxima chamada, então qualquer modelo retoma dali. A mensagem da pessoa fica salva, e "Tentar de novo" continua sem redigitar. Pode haver estouro de um passo, porque o custo só é conhecido depois da resposta.
+- **A parada é um erro** (`lastRun: 'error'`), então a fila de mensagens espera por "Enviar agora". Aos 75% sai um aviso uma vez por execução e por tipo de limite.
+
 ### Terminais e atualizações
 
 - **Terminais são só da pessoa:** `TerminalService` não é ferramenta do agente. O ambiente do shell perde `*_API_KEY`, `*_AUTH_TOKEN`, `*_SECRET`, `ELECTRON_*` e `CLAUDIO_*`. O diretório inicial passa por `resolveInside`, o limite é de 16 sessões e elas acompanham a conversa: fecham quando o projeto muda.
@@ -175,6 +187,7 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 - Modelo automático ou manual, e força do modelo de Baixa a Máxima
 - Seletor que recomenda um modelo e mostra custo, força e tempo aproximados, com velocidade medida
 - Perfis econômico, equilibrado e desempenho no modelo automático, e avisos antes de o contexto acabar
+- Orçamento por conversa e mensal por projeto, com aviso aos 75% e parada no limite, e painel de gasto (hoje, 7 dias, mês, total, por dia, projeto e modelo) em Ajustes → Custos
 - Modelos sem suporte a ferramentas continuam só com texto, com aviso
 
 **Agente e ferramentas**
@@ -220,7 +233,7 @@ O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (
 
 **Verificado no Windows (até 2026-11-07):** 144 testes de unidade e integração e 14 de ponta a ponta no Electron real, passando pelos SDKs oficiais contra o servidor simulado, com `git` real em repositórios temporários. Também foram confirmados `npm ci` em pasta vazia e `npm run dev`.
 
-**Verificado em Linux (container de nuvem, 2026-11-22, versão 1.0.18):** `npm run typecheck` sem erros. `npm test`: 193 passaram e 22 foram pulados (os do script de release e do upload, que exigem Windows PowerShell). `npm run test:e2e` com `xvfb-run`: 27 passaram, 1 foi pulado (scripts PowerShell) e 1 falhou, o de MCP (veja abaixo). Os testes e2e do Linux provam a interface no Electron real, não o uso do app por uma pessoa.
+**Verificado em Linux (container de nuvem, 2026-11-22):** na versão 1.0.18, `npm run typecheck` sem erros; `npm test` com 193 aprovados e 22 pulados (os do script de release e do upload, que exigem Windows PowerShell); `npm run test:e2e` com `xvfb-run` com 27 aprovados, 1 pulado (scripts PowerShell) e 1 falho, o de MCP (veja abaixo). Com o orçamento e o painel de gasto, a mesma bateria deu `typecheck` sem erros, 214 aprovados e 22 pulados nos testes de unidade, e 29 aprovados e 1 pulado no e2e, com o teste de MCP passando. Os testes e2e do Linux provam a interface no Electron real, não o uso do app por uma pessoa.
 
 **Com APIs reais, feito pelo usuário:** listagem de modelos da Anthropic (13) e da OpenAI (50). O gpt-4o e o gpt-6.1-sol, pelo protocolo Responses, chamaram `list_dir`, `read_file`, `search`, `run_command` e `update_plan` (64 chamadas, todas com resultado gravado), contadas nas conversas salvas.
 

@@ -1,4 +1,16 @@
-import { modelKey, type Message, type ModelInfo, type ModelRef, type Usage } from './types'
+import { modelKey, type Message, type ModelInfo, type ModelPricing, type ModelRef, type Usage } from './types'
+
+const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
+
+export function formatUsd(amount: number): string {
+  return usd.format(amount)
+}
+
+/** Estimated US dollars for one answer. Prices are per million tokens, and `input` already includes cached tokens. */
+export function messageCost(usage: Usage, price: ModelPricing): number {
+  const cached = usage.cached ?? 0
+  return ((usage.input - cached) * price.input + cached * (price.cacheRead ?? price.input) + usage.output * price.output) / 1_000_000
+}
 
 export interface UsageSummary {
   input: number
@@ -27,8 +39,7 @@ export function summarizeUsage(messages: Message[], models: ModelInfo[]): UsageS
       summary.costComplete = false
       return
     }
-    summary.cost +=
-      ((usage.input - cached) * price.input + cached * (price.cacheRead ?? price.input) + usage.output * price.output) / 1_000_000
+    summary.cost += messageCost(usage, price)
   }
 
   for (const message of messages) {

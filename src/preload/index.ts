@@ -10,6 +10,7 @@ const api: UniApi = {
   platform: process.platform,
   updates: { status: call('updates.status'), check: call('updates.check'), download: call('updates.download'), install: call('updates.install') },
   prefs: { get: call('prefs.get'), set: call('prefs.set') },
+  spending: { report: call('spending.report') },
   providers: {
     list: call('providers.list'),
     setKey: call('providers.setKey'),

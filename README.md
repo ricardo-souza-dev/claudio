@@ -51,6 +51,7 @@ Atalhos: `Ctrl+K` troca de modelo, `Ctrl+N` abre uma conversa nova, `Enter` envi
 - **Anexos:** clique no clipe, arraste ou cole um print direto na caixa de mensagem. Imagens, PDFs e arquivos de texto ficam disponíveis para qualquer modelo que continuar a conversa.
 - **Força:** de Baixa a Máxima, nos modelos que aceitam esse ajuste.
 - **Medidor de contexto:** mostra quanto do limite já foi usado. Ao clicar, traz tokens de entrada, saída e cache, além do custo estimado. Limites e preços vêm do [models.dev](https://models.dev) e podem variar.
+- **Orçamentos e gasto:** em **Ajustes → Custos** dá para limitar o gasto de cada conversa e o gasto mensal de cada projeto. Aos 75% o Claudio avisa, e ao chegar ao limite ele para antes do próximo passo, sem perder a mensagem: depois de aumentar o limite, "Tentar de novo" continua de onde parou. A mesma aba mostra o gasto de hoje, dos últimos 7 dias, do mês e total, por dia, por projeto e por modelo. Os valores são estimativas, calculadas com os tokens informados pelos provedores e os preços atuais do catálogo; respostas de modelos sem preço conhecido não entram, e conversas apagadas deixam de contar.
 - **Execução:** tempo, tokens, lista de tarefas e fila de mensagens ficam sempre à vista.
 
 ### Modos de permissão

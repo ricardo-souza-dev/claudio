@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { ApprovalDecision, ApprovalRequest, ModelInfo, ModelRef, PermissionMode, Thread, UniEvent } from '../src/shared/types'
-import { Runner } from '../src/main/agent/runner'
+import { Runner, type RunnerDeps } from '../src/main/agent/runner'
+import { createBudgetGuard } from '../src/main/budget'
 import { createAdapter } from '../src/main/providers/catalog'
 import { textOf } from '../src/main/providers/history'
 import type { ProviderConnection } from '../src/main/providers/types'
@@ -53,7 +54,7 @@ interface Harness {
   onApproval?: () => void
 }
 
-function harness(decision: ApprovalDecision = 'allow', useWorkspace = true): Harness {
+function harness(decision: ApprovalDecision = 'allow', useWorkspace = true, extra: Partial<RunnerDeps> = {}): Harness {
   const state: Harness = {
     events: [],
     approvals: [],
@@ -62,6 +63,7 @@ function harness(decision: ApprovalDecision = 'allow', useWorkspace = true): Har
       resolveModel: async (ref) => ({ adapter: createAdapter(connection(ref)), info: info(ref) }),
       toolsFor: () => (useWorkspace ? workspaceTools(workspace) : []),
       memory: () => 'O usuário prefere respostas curtas.',
+      ...extra,
       emit: (event) => state.events.push(event),
       save: async () => undefined,
       requestApproval: async (_threadId, request) => {
@@ -561,3 +563,65 @@ describe('interrupções e falhas', () => {
   })
 })
 
+describe('orçamento', () => {
+  /** A past answer that cost exactly `dollars`, at a price of US$ 1 per million input tokens. */
+  function spentThread(dollars: number): Thread {
+    const thread = newThread()
+    const now = Date.now()
+    thread.messages.push(
+      { id: 'm_u', role: 'user', parts: [{ type: 'text', text: 'antes' }], createdAt: now },
+      { id: 'm_a', role: 'assistant', parts: [{ type: 'text', text: 'resposta' }], createdAt: now, model: CLAUDE, usage: { input: Math.round(dollars * 1_000_000), output: 0 }, stop: 'end' }
+    )
+    return thread
+  }
+  const priced = (input: number): ModelInfo[] => [{ ...info(CLAUDE), pricing: { input, output: 0 } }]
+  const guardFor = (thread: Thread, conversationBudgetUsd: number, input = 1) => (_: Thread) =>
+    createBudgetGuard({ thread, prefs: { conversationBudgetUsd, projectBudgetsUsd: {} }, models: async () => priced(input), threads: async function* () {} })
+
+  it('stops before calling any model once the conversation has spent its limit', async () => {
+    const thread = spentThread(1)
+    const h = harness('allow', true, { budget: guardFor(thread, 1) })
+
+    await h.runner.send(thread, agent(thread, 'mais uma', CLAUDE))
+
+    expect(errorsOf(h)[0]).toMatch(/Limite de orçamento da conversa atingido: US\$\s?1,00 de US\$\s?1,00/)
+    expect(llm.requests).toHaveLength(0)
+    // The message is kept, so raising the limit and retrying resumes from it.
+    expect(thread.messages.at(-1)).toMatchObject({ role: 'user' })
+    expect(thread.lastRun).toBe('error')
+  })
+
+  it('warns at 75% and keeps working', async () => {
+    const thread = spentThread(0.8)
+    const h = harness('allow', true, { budget: guardFor(thread, 1) })
+
+    await h.runner.send(thread, agent(thread, 'segue', CLAUDE))
+
+    expect(noticesOf(h).some((text) => text.includes('Você usou 80% do orçamento da conversa'))).toBe(true)
+    expect(errorsOf(h)).toEqual([])
+    expect(lastAssistant(thread).parts.some((part) => part.type === 'text')).toBe(true)
+  })
+
+  it('stops between steps when an answer pushes the spend over the limit, leaving every tool call answered', async () => {
+    const thread = newThread()
+    // Each answer reads 10 input tokens, so US$ 1 per token makes the first one cost US$ 10.
+    const h = harness('allow', true, { budget: guardFor(thread, 5, 1_000_000) })
+
+    await h.runner.send(thread, agent(thread, 'ferramenta: list_dir {"path":"."}', CLAUDE, 'read-only'))
+
+    expect(llm.requests.filter((request) => request.protocol === 'anthropic')).toHaveLength(1)
+    expect(errorsOf(h)[0]).toContain('Limite de orçamento da conversa atingido')
+    const last = thread.messages.at(-1)!
+    expect(last.role).toBe('tool')
+    expect(last.parts.some((part) => part.type === 'tool_result' && !part.isError)).toBe(true)
+  })
+
+  it('does nothing when no budget is set', async () => {
+    const thread = newThread()
+    const h = harness('allow', true, { budget: (current) => createBudgetGuard({ thread: current, prefs: { conversationBudgetUsd: 0, projectBudgetsUsd: {} }, models: async () => { throw new Error('não deveria listar modelos') }, threads: async function* () {} }) })
+
+    await h.runner.send(thread, agent(thread, 'oi', CLAUDE))
+
+    expect(errorsOf(h)).toEqual([])
+  })
+})

@@ -1,5 +1,6 @@
 // The canonical model of a conversation. Every provider adapter translates to
 // and from these types, which is what lets one thread pass between models.
+import type { SpendingReport } from './spending'
 
 export type Protocol = 'anthropic' | 'openai-responses' | 'openai-chat' | 'gemini'
 
@@ -396,6 +397,10 @@ export interface Preferences {
   performanceProfile?: 'economy' | 'balanced' | 'performance'
   /** Ask before starting a turn whose estimated cost reaches this value. */
   warnCostUsd: number
+  /** Stops a conversation once it has spent this much, in US dollars. Zero means no limit. */
+  conversationBudgetUsd: number
+  /** Monthly limit per project folder, in US dollars. A missing project has no limit. */
+  projectBudgetsUsd: Record<string, number>
 }
 
 /** Everything the renderer may ask of the main process. Secrets only ever flow inward. */
@@ -410,6 +415,10 @@ export interface UniApi {
   prefs: {
     get(): Promise<Preferences>
     set(patch: Partial<Preferences>): Promise<Preferences>
+  }
+  spending: {
+    /** What the saved conversations cost, priced with the catalog as it is now. */
+    report(): Promise<SpendingReport>
   }
   providers: {
     list(): Promise<ProviderView[]>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { BUDGET_WARNING } from '../../shared/spending'
 import type { Effort, Message, ModelInfo } from '../../shared/types'
 import { summarizeUsage } from '../../shared/usage'
 import { EFFORT_LABELS, formatTokens, formatUsd } from './format'
@@ -28,15 +29,19 @@ interface ContextMeterProps {
   models: ModelInfo[]
   model: ModelInfo | undefined
   effort: Effort | null
+  /** The conversation limit in US dollars, or zero for none. */
+  budget: number
 }
 
 /** How full the context is, and everything a developer wants to know about what the conversation has used. */
-export function ContextMeter({ messages, models, model, effort }: ContextMeterProps) {
+export function ContextMeter({ messages, models, model, effort, budget }: ContextMeterProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const usage = summarizeUsage(messages, models)
   const limit = model?.contextWindow
   const fraction = limit ? Math.min(usage.context / limit, 1) : null
+  const budgetFraction = budget > 0 ? usage.cost / budget : null
+  const nearBudget = budgetFraction !== null && budgetFraction >= BUDGET_WARNING
   const percent = fraction === null ? null : fraction > 0 && fraction < 0.01 ? '<1%' : `${Math.round(fraction * 100)}%`
 
   useEffect(() => {
@@ -58,7 +63,7 @@ export function ContextMeter({ messages, models, model, effort }: ContextMeterPr
   return (
     <div className="meter" ref={root}>
       <button
-        className={`meter-button${fraction !== null && fraction >= WARNING_AT ? ' warning' : ''}`}
+        className={`meter-button${(fraction !== null && fraction >= WARNING_AT) || nearBudget ? ' warning' : ''}`}
         aria-expanded={open}
         aria-label={`Uso da conversa: contexto em ${percent ?? formatTokens(usage.context) + ' tokens'}`}
         title="Uso da conversa"
@@ -101,6 +106,14 @@ export function ContextMeter({ messages, models, model, effort }: ContextMeterPr
               {formatUsd(usage.cost)}
               {usage.costComplete ? '' : ' (parcial)'}
             </dd>
+            {budgetFraction !== null && (
+              <>
+                <dt>Orçamento da conversa</dt>
+                <dd>
+                  {formatUsd(usage.cost)} de {formatUsd(budget)} ({Math.round(budgetFraction * 100)}%)
+                </dd>
+              </>
+            )}
             {model?.pricing && (
               <>
                 <dt>Preço do modelo</dt>
