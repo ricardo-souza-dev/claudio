@@ -4,7 +4,7 @@ App desktop em Electron para desenvolvedores que reúne vários provedores de IA
 
 **Meta do produto:** ser a ferramenta preferida dos desenvolvedores. Na hora de priorizar, pese o que faz um dev confiar e adotar: instalação, poder desfazer, sessões longas e custo visível.
 
-**Situação em 2026-11-07:** tudo está publicado na branch `main`. O agente foi testado de ponta a ponta contra um servidor simulado. **Com APIs reais, há confirmação de pouco:** listar modelos da Anthropic e da OpenAI, e modelos da OpenAI lendo o projeto e rodando comandos. **Nenhum modelo real editou um arquivo ainda.**
+**Situação em 2026-11-22:** versão 1.0.18, tudo publicado na branch `main` (último commit em 2026-11-09). O agente foi testado de ponta a ponta contra um servidor simulado. **Com APIs reais, há confirmação de pouco:** listar modelos da Anthropic e da OpenAI, e modelos da OpenAI lendo o projeto e rodando comandos. **Nenhum modelo real editou um arquivo ainda.** Desde 2026-11-07 entraram instalador e atualizador para Windows, site, terminais interativos, perfis do modelo automático e avisos de contexto.
 
 ## Comandos
 
@@ -17,7 +17,11 @@ npm run typecheck
 npm test             # testes de unidade e integração (Vitest)
 npm run test:e2e     # compila e dirige o Electron real (Playwright)
 npm run icons        # regenera resources/icon.png e icon.ico
+npm run dist:win     # instalador NSIS para Windows x64, em dist/
+npm run site:dev     # site estático em site/ (site:build gera dist/site/)
 ```
+
+O e2e em Linux precisa de display: `xvfb-run -a npm run test:e2e -- --trace off`. Detalhes de release, site e atualizações estão em `docs/distribuicao.md`.
 
 Variáveis de ambiente usadas para isolar e testar:
 
@@ -42,6 +46,8 @@ Nenhum teste chama API real nem gera custo.
 | `src/main/project.ts` | Raiz do projeto e contexto geral enviado aos modelos |
 | `src/main/git.ts` | Tudo que o painel faz com `git` e `gh`, inclusive achar submódulos e outros repositórios |
 | `src/main/commit-message.ts` | Mensagem de commit escrita por um modelo |
+| `src/main/terminals.ts` | Terminais interativos (node-pty) operados só pela pessoa |
+| `src/main/updates.ts` | Política de atualização (`electron-updater`), testável sem o GitHub |
 | `src/main/attachments.ts` | Anexos guardados fora do arquivo da conversa |
 | `src/main/providers/catalog.ts` | Provedores prontos e escolha do adaptador |
 | `src/main/providers/history.ts` | Regras de contexto: chamadas sem resposta, histórico em texto e ids |
@@ -61,7 +67,14 @@ Nenhum teste chama API real nem gera custo.
 | `src/renderer/src/LivePanel.tsx` | Tarefas, status e fila durante a execução |
 | `src/renderer/src/ContextMeter.tsx` | Medidor de contexto, tokens e custo |
 | `src/renderer/src/ProjectPanel.tsx` | Painel direito: Git, PRs, arquivos e visualizador |
+| `src/renderer/src/ProfilePicker.tsx`, `EffortPicker.tsx` | Perfil (econômico, equilibrado, desempenho) e força do modelo |
+| `src/renderer/src/TerminalPanel.tsx` | Painel de terminais, ao lado do painel do projeto |
+| `src/renderer/src/Settings.tsx`, `Updates.tsx` | Ajustes, MCP e atualizações |
 | `resources/` | Ícones, gerados por `scripts/make-icons.mjs` |
+| `site/`, `scripts/build-site.mjs`, `vercel.json` | Site estático, com downloads lidos do GitHub Releases |
+| `.github/workflows/` | `release.yml` (instalador Windows por tag `v*`) e `site.yml` (Pages) |
+| `scripts/upload-release.ps1`, `build-project-win.ps1` | Rascunho único de release, com assets conferidos por tamanho e SHA-256 |
+| `docs/distribuicao.md` | Site, instaladores, atualizações e como publicar |
 | `tests/fixtures/mock-llm.ts` | Servidor local que simula os quatro protocolos e o catálogo de modelos |
 | `tests/fixtures/mcp-server.mjs` | Servidor MCP real usado nos testes |
 | `tests/fixtures/fake-gh.mjs` | Substituto do GitHub CLI usado nos testes |
@@ -100,7 +113,9 @@ Estas decisões não são óbvias lendo o código, e quebrá-las causa falhas s�
 
 `chooseAutoModel` pesa o pedido (`weighTask`) pelo texto, pelo tamanho do contexto e pelas ferramentas usadas há pouco, e escolhe por preço entre modelos recentes com ferramentas: o mais barato, o do meio ou o mais forte até US$ 30 por milhão de tokens de saída. `unfitReason` descarta quem não comporta o contexto ou não lê as imagens anexadas. **Nunca desce de modelo dentro da conversa,** porque trocar perde o cache de prompt. Em uma conversa sem resposta ainda, não há o que perder, então essa regra não vale. O motivo da escolha aparece na conversa.
 
-O seletor usa a mesma regra para recomendar, e `estimateTurn` calcula custo e tempo aproximados. A velocidade vem das respostas reais de cada modelo (`recordSpeed`). A classificação é por palavras-chave e tamanho, então é simples de propósito.
+**Perfis:** `economy`, `balanced` e `performance` (`AutoModelOptions.profile`; `economyMode` antigo vira `economy`). Economia escolhe uma faixa mais barata e pode descer de modelo em trabalho leve ou normal quando o ativo custa mais que o dobro. Desempenho usa o mais forte dentro do teto. **Só no automático com perfil econômico** o pedido leva a instrução de resposta compacta (`COMPACT_RESPONSE_CONTEXT`) e a saída de comandos é reduzida. A força do modelo é independente do perfil.
+
+O seletor usa a mesma regra para recomendar, desabilita modelos que não cabem (com a razão e quantos tokens faltam, via `contextShortfall`) e avisa antes de o contexto chegar ao limite. `estimateTurn` calcula custo e tempo aproximados. A velocidade vem das respostas reais de cada modelo (`recordSpeed`). A classificação é por palavras-chave e tamanho, então é simples de propósito.
 
 ### Anexos
 
@@ -131,6 +146,12 @@ O seletor usa a mesma regra para recomendar, e `estimateTurn` calcula custo e te
 - Submódulos e repositórios dentro da pasta aparecem separados, cada um com seus controles (`discoverRepositories`). Um submódulo não baixado aparece na lista de arquivos, mas é uma pasta vazia.
 - **A mensagem de commit só vai ao modelo quando a pessoa clica.** Ele recebe o que está preparado, ou tudo quando nada está, sem ferramentas e com o diff tratado como dado (`changesForMessage`). Arquivos que costumam guardar segredos são citados pelo nome, e o conteúdo fica de fora.
 
+### Terminais e atualizações
+
+- **Terminais são só da pessoa:** `TerminalService` não é ferramenta do agente. O ambiente do shell perde `*_API_KEY`, `*_AUTH_TOKEN`, `*_SECRET`, `ELECTRON_*` e `CLAUDIO_*`. O diretório inicial passa por `resolveInside`, o limite é de 16 sessões e elas acompanham a conversa: fecham quando o projeto muda.
+- **Atualização é por clique:** `autoDownload` e `autoInstallOnAppQuit` ficam desligados, pré-lançamentos e rascunhos não entram no canal, e a instalação é recusada enquanto qualquer agente trabalha, inclusive durante a gravação final da conversa.
+- **Release:** a tag precisa ser `v` + a versão estável do `package.json`. O upload cria ou reaproveita um único rascunho e nunca sobrescreve assets.
+
 ### Execução na tela
 
 - `update_plan` é a lista de tarefas que o modelo mantém. Ela aparece fixa acima da caixa de mensagem, não como ferramenta na conversa, e não volta para os modelos.
@@ -148,11 +169,12 @@ O seletor usa a mesma regra para recomendar, e `estimateTurn` calcula custo e te
 ## O que já foi feito
 
 **Modelos**
-- 11 provedores prontos: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Together AI, OpenRouter, Ollama e LM Studio
+- 12 provedores prontos: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Together AI, OpenRouter, COM4, Ollama e LM Studio
 - Provedores personalizados em qualquer um dos quatro protocolos, sem escrever código
 - Troca de modelo no meio da conversa, com histórico, instruções e ferramentas preservados
 - Modelo automático ou manual, e força do modelo de Baixa a Máxima
 - Seletor que recomenda um modelo e mostra custo, força e tempo aproximados, com velocidade medida
+- Perfis econômico, equilibrado e desempenho no modelo automático, e avisos antes de o contexto acabar
 - Modelos sem suporte a ferramentas continuam só com texto, com aviso
 
 **Agente e ferramentas**
@@ -179,8 +201,15 @@ O seletor usa a mesma regra para recomendar, e `estimateTurn` calcula custo e te
 - Lista de PRs, criação e troca para a branch do PR
 - Árvore de arquivos com filtro e visualizador
 - Iniciar Git em uma pasta sem repositório
+- Terminais interativos com saída ao vivo, várias abas, ao lado do painel do projeto
+
+**Distribuição**
+- Instalador NSIS para Windows x64, por usuário, e atualizador com verificação 20 s após abrir e a cada 6 h
+- Workflows de release (por tag) e de site, rascunho único de release com assets verificados por SHA-256
+- Site estático com downloads lidos do GitHub Releases (Vercel ou Pages)
 
 **Interface**
+- Renomear conversas na barra lateral
 - Conversas persistentes, com gravação atômica, e tema claro e escuro conforme o sistema, em cinzas neutros com destaque azul
 - Ícone próprio em todos os tamanhos
 - Linha contínua que marca onde cada modelo assumiu
@@ -189,7 +218,9 @@ O seletor usa a mesma regra para recomendar, e `estimateTurn` calcula custo e te
 
 ## O que foi verificado e o que não foi
 
-**Verificado no Windows:** 144 testes de unidade e integração e 14 de ponta a ponta no Electron real, passando pelos SDKs oficiais contra o servidor simulado, com `git` real em repositórios temporários. Também foram confirmados `npm ci` em pasta vazia e `npm run dev`.
+**Verificado no Windows (até 2026-11-07):** 144 testes de unidade e integração e 14 de ponta a ponta no Electron real, passando pelos SDKs oficiais contra o servidor simulado, com `git` real em repositórios temporários. Também foram confirmados `npm ci` em pasta vazia e `npm run dev`.
+
+**Verificado em Linux (container de nuvem, 2026-11-22, versão 1.0.18):** `npm run typecheck` sem erros. `npm test`: 193 passaram e 22 foram pulados (os do script de release e do upload, que exigem Windows PowerShell). `npm run test:e2e` com `xvfb-run`: 27 passaram, 1 foi pulado (scripts PowerShell) e 1 falhou, o de MCP (veja abaixo). Os testes e2e do Linux provam a interface no Electron real, não o uso do app por uma pessoa.
 
 **Com APIs reais, feito pelo usuário:** listagem de modelos da Anthropic (13) e da OpenAI (50). O gpt-4o e o gpt-6.1-sol, pelo protocolo Responses, chamaram `list_dir`, `read_file`, `search`, `run_command` e `update_plan` (64 chamadas, todas com resultado gravado), contadas nas conversas salvas.
 
@@ -205,9 +236,13 @@ O seletor usa a mesma regra para recomendar, e `estimateTurn` calcula custo e te
 - **Fetch, pull e push em um remoto de verdade:** os testes usam um repositório local como remoto.
 - **MCP por HTTP e SSE:** só o transporte stdio foi exercitado contra um servidor real.
 - **Fallback de recusa:** só o formato do pedido foi testado, não a resposta real da API.
-- **macOS e Linux:** o app nunca rodou neles.
+- **macOS:** o app nunca rodou nele. **Linux:** só os testes automáticos rodaram; não há instalador nem uso manual.
+- **Primeira execução dos workflows no GitHub** (release e site), instalador e atualizador entre versões instaladas, e a assinatura do app.
+- **Terminais no macOS e Linux:** o painel foi pensado para PowerShell, e o `node-pty` só foi exercitado pelos testes.
 
-**Falha intermitente em aberto:** em `one thread through four providers`, o `Ctrl+K` não abriu a busca de modelos uma vez na suíte completa. A causa não foi identificada. O erro não voltou em 40 repetições, e agora o teste registra o estado da tela se falhar.
+**Falha intermitente em aberto (MCP):** em `MCP: a real server becomes available to any model, with approval`, a suíte completa no Linux falhou uma vez em `getByText('2 ferramentas')` no passo em que o app é reaberto e o servidor MCP salvo precisa reconectar (`tests/e2e/app.spec.ts:804`). Sozinho, o teste passou 3 de 3. A causa não foi investigada: pode ser corrida na reconexão sob carga ou o tempo de 20 s. Se aparecer em uso real, o sintoma seria o servidor não voltar depois de reabrir o app.
+
+**Falha intermitente em aberto (Ctrl+K):** em `one thread through four providers`, o `Ctrl+K` não abriu a busca de modelos uma vez na suíte completa. A causa não foi identificada. O erro não voltou em 40 repetições, e agora o teste registra o estado da tela se falhar.
 
 ## O que falta
 
@@ -216,10 +251,10 @@ Em ordem de prioridade:
 1. **Testar a edição com um modelo real,** em uma pasta descartável com Git, e depois com Anthropic e Gemini. Vem primeiro porque pode invalidar partes do que já existe.
 2. **Desfazer alterações.** Pontos de restauração para reverter o que um modelo mudou, inclusive sem Git. Sem isso, ninguém deixa um agente editar sem supervisão.
 3. **Conversas longas.** Hoje não há compactação, então uma conversa extensa acaba em erro ao atingir o limite de contexto do modelo.
-4. **Saída de comandos ao vivo.** Hoje ela só chega quando o comando termina.
+4. **Saída de comandos ao vivo.** Os terminais da pessoa já mostram a saída ao vivo, mas o `run_command` do agente só devolve o resultado quando o comando termina.
 5. **Chrome de primeira classe.** Validar os atalhos, repassar imagens de ferramentas MCP aos modelos, que hoje são omitidas, e avaliar uma extensão própria, com permissão por site e capturas de tela na conversa.
 6. **Sandbox para comandos.** Hoje um comando aprovado roda com as permissões do usuário.
-7. **Distribuição.** Instalador, atualização automática e assinatura do app, depois de validar macOS e Linux. Atalho fixado na barra de tarefas só terá o ícone certo com instalador.
+7. **Distribuição, o que falta.** O instalador e o atualizador do Windows existem, mas os workflows nunca rodaram no GitHub e ainda não há release publicada. Falta assinar o app e validar macOS e Linux.
 8. **Uso pelo terminal.** Uma versão em linha de comando sobre o mesmo núcleo, porque é onde boa parte dos devs trabalha.
 9. **Git mais completo.** Revisar e aprovar PRs, resolver conflitos e editar arquivos direto no painel.
 10. **OAuth para MCP remoto.** Hoje só há cabeçalhos fixos, e muitos servidores remotos exigem OAuth.
@@ -228,7 +263,6 @@ Em ordem de prioridade:
 
 **Ajustes menores:**
 - O Electron avisa que `safeStorage.encryptString` e `decryptString` serão removidos. É preciso migrar para as versões assíncronas.
-- `threads.rename` existe na API, mas ainda não tem tela.
 - A lista de modelos só aparece quando todos os provedores respondem, então um provedor lento atrasa os outros.
 - O resumo de raciocínio da OpenAI não é pedido nem exibido.
 - A classificação do modelo automático é simples e precisa ser avaliada com uso real.
